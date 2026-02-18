@@ -1,7 +1,6 @@
 package com.zxuhan;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -369,7 +368,169 @@ class TerminalBufferTest {
 
     @Nested
     class AttributeTest {
+        TerminalBuffer buf;
 
+        @BeforeEach
+        void setUp() {
+            buf = new TerminalBuffer(10, 5, 100);
+        }
+
+        @Nested
+        class SetForegroundTest {
+
+            @Test
+            void setForeground_specificColor_storesThatColor() {
+                buf.setForeground(Color.RED);
+                assertEquals(Color.RED, buf.currentFg);
+            }
+
+            @Test
+            void setForeground_explicitDefault_restoresDefault() {
+                buf.setForeground(Color.GREEN);
+                buf.setForeground(Color.DEFAULT);
+                assertEquals(Color.DEFAULT, buf.currentFg);
+            }
+
+            @Test
+            void setForeground_doesNotAffectBackground() {
+                buf.setForeground(Color.BLUE);
+                assertEquals(Color.DEFAULT, buf.currentBg);
+            }
+        }
+
+        @Nested
+        class SetBackgroundTest {
+
+            @Test
+            void setBackground_specificColor_storesThatColor() {
+                buf.setBackground(Color.CYAN);
+                assertEquals(Color.CYAN, buf.currentBg);
+            }
+
+            @Test
+            void setBackground_explicitDefault_restoresDefault() {
+                buf.setBackground(Color.YELLOW);
+                buf.setBackground(Color.DEFAULT);
+                assertEquals(Color.DEFAULT, buf.currentBg);
+            }
+
+            @Test
+            void setBackground_doesNotAffectForeground() {
+                buf.setBackground(Color.MAGENTA);
+                assertEquals(Color.DEFAULT, buf.currentFg);
+            }
+        }
+
+        @Nested
+        class SetBoldTest {
+
+            @Test
+            void setBold_true_setsTrue() {
+                buf.setBold(true);
+                assertTrue(buf.currentBold);
+            }
+
+            @Test
+            void setBold_false_setsFalse() {
+                buf.setBold(true);
+                buf.setBold(false);
+                assertFalse(buf.currentBold);
+            }
+
+            @Test
+            void setBold_doesNotAffectOtherFlags() {
+                buf.setBold(true);
+                assertAll(
+                        () -> assertFalse(buf.currentItalic),
+                        () -> assertFalse(buf.currentUnderline)
+                );
+            }
+        }
+
+        @Nested
+        class SetItalicTest {
+
+            @Test
+            void setItalic_true_setsTrue() {
+                buf.setItalic(true);
+                assertTrue(buf.currentItalic);
+            }
+
+            @Test
+            void setItalic_false_setsFalse() {
+                buf.setItalic(true);
+                buf.setItalic(false);
+                assertFalse(buf.currentItalic);
+            }
+
+            @Test
+            void setItalic_doesNotAffectOtherFlags() {
+                buf.setItalic(true);
+                assertAll(
+                        () -> assertFalse(buf.currentBold),
+                        () -> assertFalse(buf.currentUnderline)
+                );
+            }
+        }
+
+        @Nested
+        class SetUnderlineTest {
+
+            @Test
+            void setUnderline_true_setsTrue() {
+                buf.setUnderline(true);
+                assertTrue(buf.currentUnderline);
+            }
+
+            @Test
+            void setUnderline_false_setsFalse() {
+                buf.setUnderline(true);
+                buf.setUnderline(false);
+                assertFalse(buf.currentUnderline);
+            }
+
+            @Test
+            void setUnderline_doesNotAffectOtherFlags() {
+                buf.setUnderline(true);
+                assertAll(
+                        () -> assertFalse(buf.currentBold),
+                        () -> assertFalse(buf.currentItalic)
+                );
+            }
+        }
+
+        @Nested
+        class ResetAttributesTest {
+
+            @Test
+            void resetAttributes_afterAllChanged_allReturnToDefaults() {
+                buf.setForeground(Color.BRIGHT_RED);
+                buf.setBackground(Color.BRIGHT_BLUE);
+                buf.setBold(true);
+                buf.setItalic(true);
+                buf.setUnderline(true);
+
+                buf.resetAttributes();
+
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, buf.currentFg),
+                        () -> assertEquals(Color.DEFAULT, buf.currentBg),
+                        () -> assertFalse(buf.currentBold),
+                        () -> assertFalse(buf.currentItalic),
+                        () -> assertFalse(buf.currentUnderline)
+                );
+            }
+
+            @Test
+            void resetAttributes_doesNotMoveCursor() {
+                buf.setCursor(5, 3);
+                buf.resetAttributes();
+                assertAll(
+                        () -> assertEquals(5, buf.getCursorCol()),
+                        () -> assertEquals(3, buf.getCursorRow())
+                );
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
