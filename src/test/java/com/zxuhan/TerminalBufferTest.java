@@ -743,5 +743,276 @@ class TerminalBufferTest {
     @Nested
     class ContentAccessTest {
 
+        private TerminalBuffer buf;
+
+        @BeforeEach
+        void setUp() {
+            buf = new TerminalBuffer(5, 3, 3);
+        }
+
+        // Helper: write a distinguishable character string at cursor row
+        private void writeToRow(TerminalBuffer buf, int row, String text) {
+            buf.setCursor(0, row);
+            for (int i = 0; i < text.length() && i < buf.width; i++) {
+                buf.screen[row].getCell(i).ch = text.codePointAt(i);
+            }
+        }
+
+        private String rowContent(TerminalBuffer buf, int row) {
+            return buf.screen[row].toString();
+        }
+
+
+        private void scrollLines(int n) {
+            for (int i = 0; i < n; i++) {
+                writeToRow(buf, 0, "L" + i + "   ");
+                buf.insertEmptyLineAtBottom();
+            }
+        }
+
+        @Nested
+        class GetScreenChar {
+
+            @Test
+            void getScreenChar_freshBuffer_returnsSpace() {
+                assertEquals(' ', buf.getScreenChar(0, 0));
+            }
+
+            @Test
+            void getScreenChar_afterWrite_returnsWrittenCodePoint() {
+                writeToRow(buf, 1, "  X  ");
+                assertEquals('X', buf.getScreenChar(2, 1));
+            }
+
+            @Test
+            void getScreenChar_unwrittenCellAdjacentToWrite_remainsSpace() {
+                writeToRow(buf, 1, "  X  ");
+                assertEquals(' ', buf.getScreenChar(3, 1));
+            }
+
+            @Test
+            void getScreenChar_afterScroll_reflectsShiftedContent() {
+                writeToRow(buf, 0, "TOP  ");
+                buf.insertEmptyLineAtBottom();
+                // screen[0] is now what was screen[1] — blank
+                assertEquals(' ', buf.getScreenChar(0, 0));
+            }
+        }
+
+        @Nested
+        class GetScreenAttributes {
+
+            @Test
+            void getScreenAttributes_freshBuffer_returnsAllDefaults() {
+                CellAttributes attrs = buf.getScreenAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScreenAttributes_afterDirectCellWrite_reflectsStoredAttributes() {
+                Cell cell = buf.screen[1].getCell(1);
+                cell.fg = Color.RED;
+                cell.bg = Color.BLUE;
+                cell.bold = true;
+                cell.italic = true;
+                cell.underline = true;
+                cell.ch = 'A';
+
+                CellAttributes attrs = buf.getScreenAttributes(1, 1);
+                assertAll(
+                        () -> assertEquals(Color.RED, attrs.fg()),
+                        () -> assertEquals(Color.BLUE, attrs.bg()),
+                        () -> assertTrue(attrs.bold()),
+                        () -> assertTrue(attrs.italic()),
+                        () -> assertTrue(attrs.underline())
+                );
+            }
+        }
+
+        @Nested
+        class GetScreenLine {
+
+            @Test
+            void getScreenLine_freshBuffer_returnsAllSpaces() {
+                assertEquals("     ", buf.getScreenLine(0));
+            }
+
+            @Test
+            void getScreenLine_afterPartialWrite_paddedWithSpaces() {
+                writeToRow(buf, 1, "Hi");
+                assertEquals("Hi   ", buf.getScreenLine(1));
+            }
+
+            @Test
+            void getScreenLine_lastRow_returnsCorrectContent() {
+                writeToRow(buf, 2, "End  ");
+                assertEquals("End  ", buf.getScreenLine(2));
+            }
+        }
+
+        @Nested
+        class GetScreenContent {
+
+            @Test
+            void getScreenContent_freshBuffer_allBlankLinesWithTrailingNewlines() {
+                assertEquals("     \n     \n     \n", buf.getScreenContent());
+            }
+
+            @Test
+            void getScreenContent_afterWrites_includesAllRowsInOrder() {
+                writeToRow(buf, 0, "AAA  ");
+                writeToRow(buf, 1, "BBB  ");
+                writeToRow(buf, 2, "CCC  ");
+                assertEquals("AAA  \nBBB  \nCCC  \n", buf.getScreenContent());
+            }
+
+            @Test
+            void getScreenContent_lastLineAlsoHasTrailingNewline() {
+                String content = buf.getScreenContent();
+                assertTrue(content.endsWith("\n"));
+                // Exactly one newline per row, no extras
+                assertEquals(buf.height, content.chars().filter(c -> c == '\n').count());
+            }
+        }
+
+        @Nested
+        class GetScrollbackChar {
+
+            @Test
+            void getScrollbackChar_singleScroll_row0IsScrolledLine() {
+                writeToRow(buf, 0, "HELLO");
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals('H', buf.getScrollbackChar(0, 0));
+                assertEquals('E', buf.getScrollbackChar(1, 0));
+            }
+
+            @Test
+            void getScrollbackChar_multipleScrolls_oldestAtRow0NewestAtLastIndex() {
+                scrollLines(3);
+                assertEquals('0', buf.getScrollbackChar(1, 0));  // oldest: "L0   "
+                assertEquals('2', buf.getScrollbackChar(1, 2));  // newest: "L2   "
+            }
+
+            @Test
+            void getScrollbackChar_scrolledBlankLine_returnsSpace() {
+                buf.insertEmptyLineAtBottom();
+                assertEquals(' ', buf.getScrollbackChar(0, 0));
+            }
+
+            @Test
+            void getScrollbackChar_mutatingScreenAfterScroll_doesNotCorruptScrollback() {
+                writeToRow(buf, 0, "ORIG ");
+                buf.insertEmptyLineAtBottom();
+                // Overwrite screen row 0 (now the line that was screen[1])
+                writeToRow(buf, 0, "MUTD ");
+
+                assertEquals('O', buf.getScrollbackChar(0, 0));
+            }
+        }
+
+        @Nested
+        class GetScrollbackAttributes {
+
+            @Test
+            void getScrollbackAttributes_scrolledCellWithAttributes_preservedInScrollback() {
+                Cell cell = buf.screen[0].getCell(0);
+                cell.fg = Color.MAGENTA;
+                cell.bold = true;
+                buf.insertEmptyLineAtBottom();
+
+                CellAttributes attrs = buf.getScrollbackAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.MAGENTA, attrs.fg()),
+                        () -> assertTrue(attrs.bold())
+                );
+            }
+
+            @Test
+            void getScrollbackAttributes_mutatingCellAfterScroll_doesNotCorruptScrollback() {
+                buf.screen[0].getCell(0).fg = Color.YELLOW;
+                buf.insertEmptyLineAtBottom();
+
+                // Mutate the cell that is now on screen
+                buf.screen[0].getCell(0).fg = Color.CYAN;
+
+                assertEquals(Color.YELLOW, buf.getScrollbackAttributes(0, 0).fg());
+            }
+        }
+
+        @Nested
+        class GetScrollbackLine {
+
+            @Test
+            void getScrollbackLine_singleScroll_returnsScrolledContent() {
+                writeToRow(buf, 0, "ROW0 ");
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals("ROW0 ", buf.getScrollbackLine(0));
+            }
+
+            @Test
+            void getScrollbackLine_multipleScrolls_indexMatchesScrollOrder() {
+                writeToRow(buf, 0, "FIRST");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "SECND");
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals("FIRST", buf.getScrollbackLine(0));
+                assertEquals("SECND", buf.getScrollbackLine(1));
+            }
+        }
+
+        @Nested
+        class GetFullContent {
+
+            @Test
+            void getFullContent_noScrollback_equalsBlankScreen() {
+                assertEquals("     \n     \n     \n", buf.getFullContent());
+            }
+
+            @Test
+            void getFullContent_noScrollback_withScreenWrites_matchesExactOutput() {
+                writeToRow(buf, 0, "AAA  ");
+                writeToRow(buf, 1, "BBB  ");
+                writeToRow(buf, 2, "CCC  ");
+                assertEquals("AAA  \nBBB  \nCCC  \n", buf.getFullContent());
+            }
+
+            @Test
+            void getFullContent_withScrollback_scrollbackFirstThenScreen() {
+                writeToRow(buf, 0, "SB   ");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "SC   ");
+                // scrollback: ["SB   "], screen: ["SC   ", "     ", "     "]
+                assertEquals("SB   \nSC   \n     \n     \n", buf.getFullContent());
+            }
+
+            @Test
+            void getFullContent_multipleScrolls_oldestFirstNewestScreenLast() {
+                writeToRow(buf, 0, "OLD  ");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "MID  ");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "SCR  ");
+                // scrollback: ["OLD  ", "MID  "], screen: ["SCR  ", "     ", "     "]
+                assertEquals("OLD  \nMID  \nSCR  \n     \n     \n", buf.getFullContent());
+            }
+
+            @Test
+            void getFullContent_everyLineHasTrailingNewline() {
+                scrollLines(2);
+                String full = buf.getFullContent();
+                int expectedNewlines = buf.scrollback.size() + buf.height;
+                assertEquals(expectedNewlines, full.chars().filter(c -> c == '\n').count());
+                assertTrue(full.endsWith("\n"));
+            }
+        }
     }
 }
