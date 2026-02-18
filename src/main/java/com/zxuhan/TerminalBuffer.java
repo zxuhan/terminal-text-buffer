@@ -134,4 +134,60 @@ public class TerminalBuffer {
         clearScreen();
         scrollback.clear();
     }
+
+    // --- Content access: screen ---
+
+    // Row is in [0, height-1].
+    public int getScreenChar(int col, int row) {
+        return screen[row].getCell(col).ch;
+    }
+
+    public CellAttributes getScreenAttributes(int col, int row) {
+        Cell cell = screen[row].getCell(col);
+        return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
+    }
+
+    public String getScreenLine(int row) {
+        return screen[row].toString();
+    }
+
+    /** Returns all screen lines from row 0 to row height-1, each terminated with {@code \n}. */
+    public String getScreenContent() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < height; i++) {
+            sb.append(screen[i].toString()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    // --- Content access: scrollback ---
+
+    // Row is in [0, scrollback.size()-1]; row 0 is the oldest line.
+    public int getScrollbackChar(int col, int row) {
+        return scrollback.get(row).getCell(col).ch;
+    }
+
+    public CellAttributes getScrollbackAttributes(int col, int row) {
+        Cell cell = scrollback.get(row).getCell(col);
+        return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
+    }
+
+    public String getScrollbackLine(int row) {
+        return scrollback.get(row).toString();
+    }
+
+    /**
+     * Returns the full terminal history: scrollback lines (oldest first) followed by screen lines,
+     * each terminated with {@code \n}.
+     */
+    public String getFullContent() {
+        StringBuilder sb = new StringBuilder();
+        for (Line line : scrollback) {
+            sb.append(line.toString()).append('\n');
+        }
+        for (int i = 0; i < height; i++) {
+            sb.append(screen[i].toString()).append('\n');
+        }
+        return sb.toString();
+    }
 }
