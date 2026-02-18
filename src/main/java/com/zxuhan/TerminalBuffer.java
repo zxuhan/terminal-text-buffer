@@ -101,4 +101,37 @@ public class TerminalBuffer {
         currentItalic = false;
         currentUnderline = false;
     }
+
+    // --- Screen-level operations ---
+
+    /**
+     * Pushes screen[0] into scrollback (evicting oldest if over limit),
+     * shifts all screen lines up by one, and appends a fresh blank line at the bottom.
+     * Cursor position is unchanged.
+     */
+    void insertEmptyLineAtBottom() {
+        scrollback.add(screen[0].copy());
+        if (scrollback.size() > maxScrollback) {
+            scrollback.remove(0);
+        }
+
+        // Shift lines up — reference copy, not deep copy
+        System.arraycopy(screen, 1, screen, 0, height - 1);
+
+        screen[height - 1] = new Line(width);
+    }
+
+    /** Replaces every screen line with a fresh blank line and resets the cursor to (0, 0). */
+    void clearScreen() {
+        for (int i = 0; i < height; i++) {
+            screen[i] = new Line(width);
+        }
+        setCursor(0, 0);
+    }
+
+    /** Same as clearScreen(), but also discards all scrollback history. */
+    void clearScreenAndScrollback() {
+        clearScreen();
+        scrollback.clear();
+    }
 }
