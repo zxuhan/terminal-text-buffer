@@ -43,4 +43,34 @@ public class TerminalBuffer {
         currentItalic = false;
         currentUnderline = false;
     }
+
+    int getCursorCol() {
+        return cursorCol;
+    }
+
+    int getCursorRow() {
+        return cursorRow;
+    }
+
+    /** Clamps both axes to valid ranges: col to [0, width-1], row to [0, height-1]. */
+    void setCursor(int col, int row) {
+        cursorCol = Math.max(0, Math.min(col, width - 1));
+        cursorRow = Math.max(0, Math.min(row, height - 1));
+    }
+
+    void moveCursorUp(int n) {
+        setCursor(cursorCol, cursorRow - n);
+    }
+
+    void moveCursorDown(int n) {
+        setCursor(cursorCol, cursorRow + n);
+    }
+
+    void moveCursorLeft(int n) {
+        setCursor(cursorCol - n, cursorRow);
+    }
+
+    void moveCursorRight(int n) {
+        setCursor(cursorCol + n, cursorRow);
+    }
 }
