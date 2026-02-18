@@ -1,0 +1,1 @@
+rootProject.name = "terminal-text-buffer"
