@@ -545,6 +545,197 @@ class TerminalBufferTest {
     @Nested
     class ScreenOperationsTest {
 
+        // Helper: write a distinguishable character string into row 0 col 0
+        private void writeToRow(TerminalBuffer buf, int row, String text) {
+            buf.setCursor(0, row);
+            for (int i = 0; i < text.length() && i < buf.width; i++) {
+                buf.screen[row].getCell(i).ch = text.codePointAt(i);
+            }
+        }
+
+        private String rowContent(TerminalBuffer buf, int row) {
+            return buf.screen[row].toString();
+        }
+
+        @Nested
+        class InsertEmptyLineAtBottomTest {
+
+            @Test
+            void insertEmptyLineAtBottom_nonFullScrollback_pushesOldestScreenRowToScrollback() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                writeToRow(buf, 0, "ABC  ");
+
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals(1, buf.scrollback.size());
+                assertEquals("ABC  ", buf.scrollback.get(0).toString());
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_nonFullScrollback_shiftsScreenLinesUp() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                writeToRow(buf, 0, "AAA  ");
+                writeToRow(buf, 1, "BBB  ");
+                writeToRow(buf, 2, "CCC  ");
+
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals("BBB  ", rowContent(buf, 0));
+                assertEquals("CCC  ", rowContent(buf, 1));
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_anyCall_appendsBlankLineAtBottom() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                writeToRow(buf, 0, "AAA  ");
+
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals("     ", rowContent(buf, 2));
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_anyCall_cursorPositionUnchanged() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                buf.setCursor(2, 1);
+
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals(2, buf.getCursorCol());
+                assertEquals(1, buf.getCursorRow());
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_scrollbackAtMaxScrollback_evictsOldestLine() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 2);
+                writeToRow(buf, 0, "L1   ");
+                buf.insertEmptyLineAtBottom(); // scrollback: [L1]
+                writeToRow(buf, 0, "L2   ");
+                buf.insertEmptyLineAtBottom(); // scrollback: [L1, L2]
+                writeToRow(buf, 0, "L3   ");
+                buf.insertEmptyLineAtBottom(); // scrollback should be [L2, L3]
+
+                assertEquals(2, buf.scrollback.size());
+                assertEquals("L2   ", buf.scrollback.get(0).toString());
+                assertEquals("L3   ", buf.scrollback.get(1).toString());
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_scrollbackSnapshot_isolatedFromSubsequentScreenEdits() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                writeToRow(buf, 0, "ORIG ");
+
+                buf.insertEmptyLineAtBottom();
+
+                // Mutate what is now screen[0] (was screen[1] before shift)
+                buf.screen[0].getCell(0).ch = 'X';
+
+                assertEquals("ORIG ", buf.scrollback.get(0).toString());
+            }
+
+            @Test
+            void insertEmptyLineAtBottom_multipleInserts_scrollbackOrderIsOldestFirst() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                writeToRow(buf, 0, "FIRST");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "SECND");
+                buf.insertEmptyLineAtBottom();
+
+                assertEquals("FIRST", buf.scrollback.get(0).toString());
+                assertEquals("SECND", buf.scrollback.get(1).toString());
+            }
+        }
+
+        @Nested
+        class ClearScreenTest {
+
+            @Test
+            void clearScreen_withContent_allScreenRowsBecomeBlanks() {
+                TerminalBuffer buf = new TerminalBuffer(4, 3, 10);
+                writeToRow(buf, 0, "ABCD");
+                writeToRow(buf, 1, "EFGH");
+                writeToRow(buf, 2, "IJKL");
+
+                buf.clearScreen();
+
+                for (int r = 0; r < buf.height; r++) {
+                    assertEquals("    ", rowContent(buf, r));
+                }
+            }
+
+            @Test
+            void clearScreen_withCursorNotAtOrigin_resetsCursorToOrigin() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                buf.setCursor(3, 2);
+
+                buf.clearScreen();
+
+                assertEquals(0, buf.getCursorCol());
+                assertEquals(0, buf.getCursorRow());
+            }
+
+            @Test
+            void clearScreen_withScrollback_scrollbackUntouched() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                writeToRow(buf, 0, "HIST ");
+                buf.insertEmptyLineAtBottom(); // populate scrollback
+
+                buf.clearScreen();
+
+                assertEquals(1, buf.scrollback.size());
+                assertEquals("HIST ", buf.scrollback.get(0).toString());
+            }
+        }
+
+        @Nested
+        class ClearScreenAndScrollbackTest {
+
+            @Test
+            void clearScreenAndScrollback_withContent_allScreenRowsBecomeBlanks() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                writeToRow(buf, 0, "ABCD");
+                writeToRow(buf, 1, "EFGH");
+
+                buf.clearScreenAndScrollback();
+
+                for (int r = 0; r < buf.height; r++) {
+                    assertEquals("    ", rowContent(buf, r));
+                }
+            }
+
+            @Test
+            void clearScreenAndScrollback_withScrollback_scrollbackBecomesEmpty() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                writeToRow(buf, 0, "LINE1");
+                buf.insertEmptyLineAtBottom();
+                writeToRow(buf, 0, "LINE2");
+                buf.insertEmptyLineAtBottom();
+
+                buf.clearScreenAndScrollback();
+
+                assertEquals(0, buf.scrollback.size());
+            }
+
+            @Test
+            void clearScreenAndScrollback_withCursorNotAtOrigin_resetsCursorToOrigin() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                buf.setCursor(4, 2);
+
+                buf.clearScreenAndScrollback();
+
+                assertEquals(0, buf.getCursorCol());
+                assertEquals(0, buf.getCursorRow());
+            }
+
+            @Test
+            void clearScreenAndScrollback_emptyScrollback_remainsEmpty() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+
+                buf.clearScreenAndScrollback();
+
+                assertEquals(0, buf.scrollback.size());
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
