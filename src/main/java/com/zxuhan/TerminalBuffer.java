@@ -73,4 +73,32 @@ public class TerminalBuffer {
     void moveCursorRight(int n) {
         setCursor(cursorCol + n, cursorRow);
     }
+
+    void setForeground(Color fg) {
+        currentFg = fg;
+    }
+
+    void setBackground(Color bg) {
+        currentBg = bg;
+    }
+
+    void setBold(boolean bold) {
+        currentBold = bold;
+    }
+
+    void setItalic(boolean italic) {
+        currentItalic = italic;
+    }
+
+    void setUnderline(boolean underline) {
+        currentUnderline = underline;
+    }
+
+    void resetAttributes() {
+        currentFg = Color.DEFAULT;
+        currentBg = Color.DEFAULT;
+        currentBold = false;
+        currentItalic = false;
+        currentUnderline = false;
+    }
 }
