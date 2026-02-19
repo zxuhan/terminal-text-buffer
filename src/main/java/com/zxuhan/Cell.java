@@ -28,7 +28,7 @@ public class Cell {
         return new Cell(' ', Color.DEFAULT, Color.DEFAULT, false, false, false);
     }
 
-    /** Returns a deep copy. Required to avoid aliasing when storing into scrollback. */
+    /** Returns a deep copy; prevents aliasing when storing into scrollback. */
     public Cell copy() {
         return new Cell(ch, fg, bg, bold, italic, underline);
     }

@@ -22,7 +22,7 @@ public class TerminalBuffer {
     boolean currentItalic;
     boolean currentUnderline;
 
-    TerminalBuffer(int width, int height, int maxScrollback) {
+    public TerminalBuffer(int width, int height, int maxScrollback) {
         this.width = width;
         this.height = height;
         this.maxScrollback = maxScrollback;
@@ -44,57 +44,61 @@ public class TerminalBuffer {
         currentUnderline = false;
     }
 
-    int getCursorCol() {
+    // --- Cursor ---
+
+    public int getCursorCol() {
         return cursorCol;
     }
 
-    int getCursorRow() {
+    public int getCursorRow() {
         return cursorRow;
     }
 
     /** Clamps both axes to valid ranges: col to [0, width-1], row to [0, height-1]. */
-    void setCursor(int col, int row) {
+    public void setCursor(int col, int row) {
         cursorCol = Math.max(0, Math.min(col, width - 1));
         cursorRow = Math.max(0, Math.min(row, height - 1));
     }
 
-    void moveCursorUp(int n) {
+    public void moveCursorUp(int n) {
         setCursor(cursorCol, cursorRow - n);
     }
 
-    void moveCursorDown(int n) {
+    public void moveCursorDown(int n) {
         setCursor(cursorCol, cursorRow + n);
     }
 
-    void moveCursorLeft(int n) {
+    public void moveCursorLeft(int n) {
         setCursor(cursorCol - n, cursorRow);
     }
 
-    void moveCursorRight(int n) {
+    public void moveCursorRight(int n) {
         setCursor(cursorCol + n, cursorRow);
     }
 
-    void setForeground(Color fg) {
+    // --- Attributes ---
+
+    public void setForeground(Color fg) {
         currentFg = fg;
     }
 
-    void setBackground(Color bg) {
+    public void setBackground(Color bg) {
         currentBg = bg;
     }
 
-    void setBold(boolean bold) {
+    public void setBold(boolean bold) {
         currentBold = bold;
     }
 
-    void setItalic(boolean italic) {
+    public void setItalic(boolean italic) {
         currentItalic = italic;
     }
 
-    void setUnderline(boolean underline) {
+    public void setUnderline(boolean underline) {
         currentUnderline = underline;
     }
 
-    void resetAttributes() {
+    public void resetAttributes() {
         currentFg = Color.DEFAULT;
         currentBg = Color.DEFAULT;
         currentBold = false;
@@ -136,6 +140,7 @@ public class TerminalBuffer {
         }
         int[] codePoints = text.codePoints().toArray();
         int total = height * width;
+        // Treat the entire screen as a flat array: flat index = row * width + col
         int cursorFlat = cursorRow * width + cursorCol;
 
         int availableSlots = 0;
@@ -151,6 +156,7 @@ public class TerminalBuffer {
         int insertCount = Math.min(codePoints.length, availableSlots);
         if (insertCount == 0) return;
 
+        // Reverse order: avoids overwriting source cells before they are copied
         for (int i = total - 1 - insertCount; i >= cursorFlat; i--) {
             Cell src = screen[i / width].getCell(i % width);
             screen[(i + insertCount) / width].setCell((i + insertCount) % width, src);
@@ -199,7 +205,7 @@ public class TerminalBuffer {
      * shifts all screen lines up by one, and appends a fresh blank line at the bottom.
      * Cursor position is unchanged.
      */
-    void insertEmptyLineAtBottom() {
+    public void insertEmptyLineAtBottom() {
         scrollback.add(screen[0].copy());
         if (scrollback.size() > maxScrollback) {
             scrollback.remove(0);
@@ -212,31 +218,33 @@ public class TerminalBuffer {
     }
 
     /** Replaces every screen line with a fresh blank line and resets the cursor to (0, 0). */
-    void clearScreen() {
+    public void clearScreen() {
         for (int i = 0; i < height; i++) {
             screen[i] = new Line(width);
         }
         setCursor(0, 0);
     }
 
-    /** Same as clearScreen(), but also discards all scrollback history. */
-    void clearScreenAndScrollback() {
+    /** Same as {@link #clearScreen()}, but also discards all scrollback history. */
+    public void clearScreenAndScrollback() {
         clearScreen();
         scrollback.clear();
     }
 
     // --- Content access: screen ---
 
-    // Row is in [0, height-1].
+    /** Returns the code point at {@code (col, row)}; row in [0, height-1]. */
     public int getScreenChar(int col, int row) {
         return screen[row].getCell(col).ch;
     }
 
+    /** Returns the cell attributes at {@code (col, row)}; row in [0, height-1]. */
     public CellAttributes getScreenAttributes(int col, int row) {
         Cell cell = screen[row].getCell(col);
         return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
     }
 
+    /** Returns the string content of screen row {@code row}; row in [0, height-1]. */
     public String getScreenLine(int row) {
         return screen[row].toString();
     }
@@ -252,16 +260,18 @@ public class TerminalBuffer {
 
     // --- Content access: scrollback ---
 
-    // Row is in [0, scrollback.size()-1]; row 0 is the oldest line.
+    /** Returns the code point at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. */
     public int getScrollbackChar(int col, int row) {
         return scrollback.get(row).getCell(col).ch;
     }
 
+    /** Returns the cell attributes at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. */
     public CellAttributes getScrollbackAttributes(int col, int row) {
         Cell cell = scrollback.get(row).getCell(col);
         return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
     }
 
+    /** Returns the string content of scrollback row {@code row}; row in [0, scrollback.size()-1], oldest first. */
     public String getScrollbackLine(int row) {
         return scrollback.get(row).toString();
     }

@@ -1,8 +1,8 @@
 package com.zxuhan;
 
 /**
- * Terminal cell colors. {@link #DEFAULT} inherits the terminal theme color;
- * it is distinct from {@link #BLACK} and {@link #WHITE}.
+ * Terminal cell colors. {@code DEFAULT} inherits the terminal theme color;
+ * it is distinct from {@code BLACK} and {@code WHITE}.
  */
 public enum Color {
     DEFAULT,

@@ -7,7 +7,7 @@ package com.zxuhan;
 public class Line {
 
     final int width;
-    Cell[] cells;
+    final Cell[] cells;
 
     public Line(int width) {
         this.width = width;
@@ -17,7 +17,7 @@ public class Line {
         }
     }
 
-    /** Returns the cell reference at {@code col}. */
+    /** Returns the live cell reference at {@code col}. */
     public Cell getCell(int col) {
         return cells[col];
     }
@@ -37,7 +37,6 @@ public class Line {
         return copy;
     }
 
-    /** Returns a String by concatenating the Unicode code point of every cell in order. */
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
