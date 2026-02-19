@@ -16,7 +16,7 @@ class LineTest {
     // --- Constructor ---
 
     @Test
-    void allCellsInitializedToBlank() {
+    void constructor_allCells_initializedToBlank() {
         for (int col = 0; col < 5; col++) {
             Cell cell = line.cells[col];
             final int c = col;
@@ -33,7 +33,7 @@ class LineTest {
     }
 
     @Test
-    void widthStoredAndCellsArrayLengthMatch() {
+    void constructor_widthAndCellsLength_match() {
         assertEquals(line.width, line.cells.length, "cells.length should equal stored width");
     }
 

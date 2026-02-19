@@ -205,7 +205,7 @@ class TerminalBufferTest {
             }
 
             @Test
-            void moveCursorUp_anyN_colUnchanged() {
+            void moveCursorUp_colIsNotAffected() {
                 buf.setCursor(6, 4);
                 buf.moveCursorUp(1);
                 assertEquals(6, buf.getCursorCol());
@@ -237,7 +237,7 @@ class TerminalBufferTest {
             }
 
             @Test
-            void moveCursorDown_anyN_colUnchanged() {
+            void moveCursorDown_colIsNotAffected() {
                 buf.setCursor(6, 0);
                 buf.moveCursorDown(1);
                 assertEquals(6, buf.getCursorCol());
@@ -269,7 +269,7 @@ class TerminalBufferTest {
             }
 
             @Test
-            void moveCursorLeft_anyN_rowUnchanged() {
+            void moveCursorLeft_rowIsNotAffected() {
                 buf.setCursor(5, 3);
                 buf.moveCursorLeft(2);
                 assertEquals(3, buf.getCursorRow());
@@ -301,7 +301,7 @@ class TerminalBufferTest {
             }
 
             @Test
-            void moveCursorRight_anyN_rowUnchanged() {
+            void moveCursorRight_rowIsNotAffected() {
                 buf.setCursor(2, 3);
                 buf.moveCursorRight(2);
                 assertEquals(3, buf.getCursorRow());
