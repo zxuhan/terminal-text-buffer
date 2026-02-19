@@ -538,6 +538,349 @@ class TerminalBufferTest {
     @Nested
     class EditingTest {
 
+        // width=5, height=3 unless a test needs something specific
+        TerminalBuffer buf;
+
+        @BeforeEach
+        void setUp() {
+            buf = new TerminalBuffer(5, 3, 10);
+        }
+
+        @Nested
+        class WriteTextTest {
+
+            @Test
+            void writeText_emptyString_cursorUnchanged() {
+                buf.setCursor(2, 1);
+                buf.writeText("");
+                assertAll(
+                        () -> assertEquals(2, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+
+            @Test
+            void writeText_singleChar_writesAtCursorAndAdvancesOne() {
+                buf.setCursor(1, 0);
+                buf.writeText("X");
+                assertAll(
+                        () -> assertEquals('X', buf.getScreenChar(1, 0)),
+                        () -> assertEquals(2, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_multipleChars_writesSequentiallyAndCursorAdvances() {
+                buf.setCursor(1, 0);
+                buf.writeText("AB");
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(1, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(2, 0)),
+                        () -> assertEquals(3, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_fromMidRow_doesNotAffectPrecedingCells() {
+                buf.setCursor(2, 0);
+                buf.writeText("XY");
+                assertAll(
+                        () -> assertEquals(' ', buf.getScreenChar(0, 0)),
+                        () -> assertEquals(' ', buf.getScreenChar(1, 0))
+                );
+            }
+
+            @Test
+            void writeText_cursorAtRightEdge_writesFirstCharOnly() {
+                buf.setCursor(4, 0);  // width-1 = 4
+                buf.writeText("AB");
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(4, 0)),
+                        () -> assertEquals(4, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_truncatesAtRightEdge_neverWraps() {
+                buf.setCursor(3, 0);
+                buf.writeText("ABCD");
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(3, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(4, 0)),
+                        () -> assertEquals(4, buf.getCursorCol()),
+                        () -> assertEquals(0, buf.getCursorRow())  // no wrap
+                );
+            }
+
+            @Test
+            void writeText_cursorRowUnchanged_afterWrite() {
+                buf.setCursor(0, 1);
+                buf.writeText("ABCDE");
+                assertEquals(1, buf.getCursorRow());
+            }
+
+            @Test
+            void writeText_appliesPenAttributes_toWrittenCells() {
+                buf.setForeground(Color.RED);
+                buf.setBackground(Color.BLUE);
+                buf.setBold(true);
+                buf.setCursor(0, 0);
+                buf.writeText("A");
+
+                CellAttributes attrs = buf.getScreenAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.RED, attrs.fg()),
+                        () -> assertEquals(Color.BLUE, attrs.bg()),
+                        () -> assertTrue(attrs.bold())
+                );
+            }
+
+            @Test
+            void writeText_highUnicodeCodePoint_storedAsInt() {
+                buf.setCursor(0, 0);
+                buf.writeText("\uD83D\uDE00");  // U+1F600 GRINNING FACE (surrogate pair)
+                assertEquals(0x1F600, buf.getScreenChar(0, 0));
+            }
+        }
+
+        @Nested
+        class InsertTextTest {
+
+            @Test
+            void insertText_emptyString_noChange() {
+                buf.setCursor(0, 0);
+                buf.insertText("");
+                assertEquals("     ", buf.getScreenLine(0));
+                assertEquals(0, buf.getCursorCol());
+            }
+
+            @Test
+            void insertText_intoAllBlankRow_writesAtCursor() {
+                buf.setCursor(1, 0);
+                buf.insertText("AB");
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(1, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(2, 0))
+                );
+            }
+
+            @Test
+            void insertText_shiftsExistingContentRight() {
+                // Pre-fill col 1 with 'Z'
+                buf.screen[0].getCell(1).ch = 'Z';
+                buf.setCursor(1, 0);
+                buf.insertText("A");
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(1, 0)),
+                        () -> assertEquals('Z', buf.getScreenChar(2, 0))
+                );
+            }
+
+            @Test
+            void insertText_truncatesTextToAvailableSlots() {
+                // Fill cols 2-4 so only col 0-1 are blank → 1 blank at end when cursor at 0
+                // screen row 0: "  XYZ" → blanks at 0,1; non-blank at 2,3,4
+                buf.screen[0].getCell(2).ch = 'X';
+                buf.screen[0].getCell(3).ch = 'Y';
+                buf.screen[0].getCell(4).ch = 'Z';
+                // Trailing blanks from end: col4='Z' not blank → availableSlots=0? No.
+                // We need trailing blank cells, so use a different setup:
+                // row0: "AB   " → cols 2,3,4 are blank; cursor at 0
+                buf.screen[0].getCell(2).ch = ' '; buf.screen[0].getCell(3).ch = ' '; buf.screen[0].getCell(4).ch = ' ';
+                buf.screen[0].getCell(0).ch = 'A';
+                buf.screen[0].getCell(1).ch = 'B';
+                // Available slots = 3 trailing blanks (cols 2,3,4 on row 0 across all rows)
+                // Actually insertText considers the full flat buffer. With height=3, width=5:
+                // total=15. Trailing blanks = rows 1 and 2 (all blank) = 10 blanks + row0 cols2-4 = 3 → 13 trailing blanks
+                // cursor at col=2: cursorFlat=2, trailing from end = 13, insertCount=min(5,13)=5 → all text fits
+                // Let's simplify: fill ALL cells non-blank except last 2, then try inserting 3 chars
+                buf = new TerminalBuffer(5, 1, 10);  // height=1 for simplicity
+                for (int c = 0; c < 3; c++) buf.screen[0].getCell(c).ch = 'X';
+                // screen: "XXX  " — trailing blanks = 2
+                buf.setCursor(0, 0);
+                buf.insertText("ABCDE");  // only 2 slots available → insertCount=2
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(0, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(1, 0)),
+                        () -> assertEquals('X', buf.getScreenChar(2, 0))  // shifted
+                );
+            }
+
+            @Test
+            void insertText_screenFull_noOp() {
+                buf = new TerminalBuffer(3, 1, 10);
+                buf.screen[0].getCell(0).ch = 'A';
+                buf.screen[0].getCell(1).ch = 'B';
+                buf.screen[0].getCell(2).ch = 'C';
+                buf.setCursor(0, 0);
+                buf.insertText("X");
+                assertEquals("ABC", buf.getScreenLine(0));
+                assertEquals(0, buf.getCursorCol());
+            }
+
+            @Test
+            void insertText_cursorAdvancesByInsertCount() {
+                buf.setCursor(0, 0);
+                buf.insertText("AB");
+                assertEquals(2, buf.getCursorCol());
+            }
+
+            @Test
+            void insertText_cursorCanAdvanceToNextRow() {
+                buf = new TerminalBuffer(3, 2, 10);
+                // row 0: "X  ", row 1: "   " → flat: X at 0, blanks 1-5
+                buf.screen[0].getCell(0).ch = 'X';
+                buf.setCursor(1, 0);  // cursorFlat=1; trailing blanks from end: flat 5,4,3,2,1 all blank → 5
+                buf.insertText("ABCDE");  // insertCount=min(5,5)=5, cursor advances to flat 6 → clamped to 5 = (1,2)
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(1, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(2, 0)),
+                        () -> assertEquals('C', buf.getScreenChar(0, 1)),
+                        () -> assertEquals('D', buf.getScreenChar(1, 1)),
+                        () -> assertEquals('E', buf.getScreenChar(2, 1)),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+
+            @Test
+            void insertText_appliesPenAttributesToInsertedCells() {
+                buf.setForeground(Color.GREEN);
+                buf.setBold(true);
+                buf.setCursor(0, 0);
+                buf.insertText("A");
+
+                CellAttributes attrs = buf.getScreenAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.GREEN, attrs.fg()),
+                        () -> assertTrue(attrs.bold())
+                );
+            }
+
+            @Test
+            void insertText_existingContentRetainsOriginalAttributes() {
+                Cell existing = buf.screen[0].getCell(0);
+                existing.ch = 'Z';
+                existing.fg = Color.YELLOW;
+                buf.setForeground(Color.RED);
+                buf.setCursor(0, 0);
+                buf.insertText("A");
+
+                // 'Z' was shifted to col 1
+                CellAttributes shifted = buf.getScreenAttributes(1, 0);
+                assertEquals(Color.YELLOW, shifted.fg());
+            }
+
+            @Test
+            void insertText_lastNonBlankFollowedByBlanks_correctSlotCount() {
+                buf = new TerminalBuffer(5, 1, 10);
+                buf.screen[0].getCell(0).ch = 'A';
+                buf.screen[0].getCell(1).ch = 'B';
+                // cols 2,3,4 blank → 3 available slots
+                buf.setCursor(2, 0);
+                buf.insertText("XYZ");  // exactly fits
+                assertAll(
+                        () -> assertEquals('X', buf.getScreenChar(2, 0)),
+                        () -> assertEquals('Y', buf.getScreenChar(3, 0)),
+                        () -> assertEquals('Z', buf.getScreenChar(4, 0))
+                );
+            }
+
+            @Test
+            void insertText_nonBlankAtEnd_zeroAvailableSlots() {
+                buf = new TerminalBuffer(5, 1, 10);
+                buf.screen[0].getCell(0).ch = 'A';
+                buf.screen[0].getCell(1).ch = 'B';
+                // cols 2,3 blank (middle), col 4 = 'C' (non-blank at end)
+                buf.screen[0].getCell(4).ch = 'C';
+                buf.setCursor(2, 0);
+                buf.insertText("X");  // no trailing blanks → insertCount=0, no-op
+                assertAll(
+                        () -> assertEquals('A', buf.getScreenChar(0, 0)),
+                        () -> assertEquals('B', buf.getScreenChar(1, 0)),
+                        () -> assertEquals(' ', buf.getScreenChar(2, 0)),
+                        () -> assertEquals(' ', buf.getScreenChar(3, 0)),
+                        () -> assertEquals('C', buf.getScreenChar(4, 0)),
+                        () -> assertEquals(2, buf.getCursorCol())  // cursor unchanged
+                );
+            }
+        }
+
+        @Nested
+        class FillLineTest {
+
+            @Test
+            void fillLine_nullArg_fillsRowWithBlankCells() {
+                buf.screen[1].getCell(0).ch = 'X';
+                buf.setCursor(0, 1);
+                buf.fillLine(null);
+                assertEquals("     ", buf.getScreenLine(1));
+            }
+
+            @Test
+            void fillLine_nonNullArg_fillsRowWithGivenCodePoint() {
+                buf.setCursor(0, 0);
+                buf.fillLine((int) '-');
+                assertEquals("-----", buf.getScreenLine(0));
+            }
+
+            @Test
+            void fillLine_appliesPenAttributesWhenNonNull() {
+                buf.setForeground(Color.CYAN);
+                buf.setItalic(true);
+                buf.setCursor(0, 0);
+                buf.fillLine((int) '*');
+
+                CellAttributes attrs = buf.getScreenAttributes(2, 0);
+                assertAll(
+                        () -> assertEquals(Color.CYAN, attrs.fg()),
+                        () -> assertTrue(attrs.italic())
+                );
+            }
+
+            @Test
+            void fillLine_nullArg_allAttributesAreDefault() {
+                buf.screen[0].getCell(0).fg = Color.RED;
+                buf.setCursor(0, 0);
+                buf.fillLine(null);
+
+                CellAttributes attrs = buf.getScreenAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void fillLine_doesNotMoveCursor() {
+                buf.setCursor(3, 1);
+                buf.fillLine((int) 'A');
+                assertAll(
+                        () -> assertEquals(3, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+
+            @Test
+            void fillLine_overwritesExistingContent() {
+                buf.screen[0].getCell(2).ch = 'Q';
+                buf.setCursor(0, 0);
+                buf.fillLine((int) 'Z');
+                assertEquals("ZZZZZ", buf.getScreenLine(0));
+            }
+
+            @Test
+            void fillLine_onlyAffectsCursorRow_otherRowsUnchanged() {
+                buf.setCursor(0, 1);
+                buf.fillLine((int) 'X');
+                assertAll(
+                        () -> assertEquals("     ", buf.getScreenLine(0)),
+                        () -> assertEquals("     ", buf.getScreenLine(2))
+                );
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
