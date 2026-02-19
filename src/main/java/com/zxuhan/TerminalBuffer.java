@@ -233,19 +233,28 @@ public class TerminalBuffer {
 
     // --- Content access: screen ---
 
-    /** Returns the code point at {@code (col, row)}; row in [0, height-1]. */
+    /** Returns the code point at {@code (col, row)}; row in [0, height-1]. Returns space if out of bounds. */
     public int getScreenChar(int col, int row) {
+        if (row < 0 || row >= height) {
+            return ' ';
+        }
         return screen[row].getCell(col).ch;
     }
 
-    /** Returns the cell attributes at {@code (col, row)}; row in [0, height-1]. */
+    /** Returns the cell attributes at {@code (col, row)}; row in [0, height-1]. Returns default attributes if out of bounds. */
     public CellAttributes getScreenAttributes(int col, int row) {
+        if (row < 0 || row >= height) {
+            return new CellAttributes(Color.DEFAULT, Color.DEFAULT, false, false, false);
+        }
         Cell cell = screen[row].getCell(col);
         return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
     }
 
-    /** Returns the string content of screen row {@code row}; row in [0, height-1]. */
+    /** Returns the string content of screen row {@code row}; row in [0, height-1]. Returns all-spaces if out of bounds. */
     public String getScreenLine(int row) {
+        if (row < 0 || row >= height) {
+            return " ".repeat(width);
+        }
         return screen[row].toString();
     }
 
@@ -260,19 +269,28 @@ public class TerminalBuffer {
 
     // --- Content access: scrollback ---
 
-    /** Returns the code point at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. */
+    /** Returns the code point at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. Returns space if out of bounds. */
     public int getScrollbackChar(int col, int row) {
+        if (row < 0 || row >= scrollback.size()) {
+            return ' ';
+        }
         return scrollback.get(row).getCell(col).ch;
     }
 
-    /** Returns the cell attributes at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. */
+    /** Returns the cell attributes at {@code (col, row)}; row in [0, scrollback.size()-1], oldest first. Returns default attributes if out of bounds. */
     public CellAttributes getScrollbackAttributes(int col, int row) {
+        if (row < 0 || row >= scrollback.size()) {
+            return new CellAttributes(Color.DEFAULT, Color.DEFAULT, false, false, false);
+        }
         Cell cell = scrollback.get(row).getCell(col);
         return new CellAttributes(cell.fg, cell.bg, cell.bold, cell.italic, cell.underline);
     }
 
-    /** Returns the string content of scrollback row {@code row}; row in [0, scrollback.size()-1], oldest first. */
+    /** Returns the string content of scrollback row {@code row}; row in [0, scrollback.size()-1], oldest first. Returns all-spaces if out of bounds. */
     public String getScrollbackLine(int row) {
+        if (row < 0 || row >= scrollback.size()) {
+            return " ".repeat(width);
+        }
         return scrollback.get(row).toString();
     }
 

@@ -17,8 +17,9 @@ public class Line {
         }
     }
 
-    /** Returns the live cell reference at {@code col}. */
+    /** Returns the live cell reference at {@code col}; returns {@link Cell#blank()} if out of bounds. */
     public Cell getCell(int col) {
+        if (col < 0 || col >= width) return Cell.blank();
         return cells[col];
     }
 
