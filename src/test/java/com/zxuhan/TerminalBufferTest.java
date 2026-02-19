@@ -888,25 +888,14 @@ class TerminalBufferTest {
     @Nested
     class ScreenOperationsTest {
 
-        // Helper: write a distinguishable character string into row 0 col 0
-        private void writeToRow(TerminalBuffer buf, int row, String text) {
-            buf.setCursor(0, row);
-            for (int i = 0; i < text.length() && i < buf.width; i++) {
-                buf.screen[row].getCell(i).ch = text.codePointAt(i);
-            }
-        }
-
-        private String rowContent(TerminalBuffer buf, int row) {
-            return buf.screen[row].toString();
-        }
-
         @Nested
         class InsertEmptyLineAtBottomTest {
 
             @Test
             void insertEmptyLineAtBottom_nonFullScrollback_pushesOldestScreenRowToScrollback() {
                 TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
-                writeToRow(buf, 0, "ABC  ");
+                buf.setCursor(0, 0);
+                buf.writeText("ABC  ");
 
                 buf.insertEmptyLineAtBottom();
 
@@ -917,24 +906,28 @@ class TerminalBufferTest {
             @Test
             void insertEmptyLineAtBottom_nonFullScrollback_shiftsScreenLinesUp() {
                 TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
-                writeToRow(buf, 0, "AAA  ");
-                writeToRow(buf, 1, "BBB  ");
-                writeToRow(buf, 2, "CCC  ");
+                buf.setCursor(0, 0);
+                buf.writeText("AAA  ");
+                buf.setCursor(0, 1);
+                buf.writeText("BBB  ");
+                buf.setCursor(0, 2);
+                buf.writeText("CCC  ");
 
                 buf.insertEmptyLineAtBottom();
 
-                assertEquals("BBB  ", rowContent(buf, 0));
-                assertEquals("CCC  ", rowContent(buf, 1));
+                assertEquals("BBB  ", buf.getScreenLine(0));
+                assertEquals("CCC  ", buf.getScreenLine(1));
             }
 
             @Test
             void insertEmptyLineAtBottom_anyCall_appendsBlankLineAtBottom() {
                 TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
-                writeToRow(buf, 0, "AAA  ");
+                buf.setCursor(0, 0);
+                buf.writeText("AAA  ");
 
                 buf.insertEmptyLineAtBottom();
 
-                assertEquals("     ", rowContent(buf, 2));
+                assertEquals("     ", buf.getScreenLine(2));
             }
 
             @Test
@@ -951,11 +944,14 @@ class TerminalBufferTest {
             @Test
             void insertEmptyLineAtBottom_scrollbackAtMaxScrollback_evictsOldestLine() {
                 TerminalBuffer buf = new TerminalBuffer(5, 2, 2);
-                writeToRow(buf, 0, "L1   ");
+                buf.setCursor(0, 0);
+                buf.writeText("L1   ");
                 buf.insertEmptyLineAtBottom(); // scrollback: [L1]
-                writeToRow(buf, 0, "L2   ");
+                buf.setCursor(0, 0);
+                buf.writeText("L2   ");
                 buf.insertEmptyLineAtBottom(); // scrollback: [L1, L2]
-                writeToRow(buf, 0, "L3   ");
+                buf.setCursor(0, 0);
+                buf.writeText("L3   ");
                 buf.insertEmptyLineAtBottom(); // scrollback should be [L2, L3]
 
                 assertEquals(2, buf.scrollback.size());
@@ -966,7 +962,8 @@ class TerminalBufferTest {
             @Test
             void insertEmptyLineAtBottom_scrollbackSnapshot_isolatedFromSubsequentScreenEdits() {
                 TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
-                writeToRow(buf, 0, "ORIG ");
+                buf.setCursor(0, 0);
+                buf.writeText("ORIG ");
 
                 buf.insertEmptyLineAtBottom();
 
@@ -979,9 +976,11 @@ class TerminalBufferTest {
             @Test
             void insertEmptyLineAtBottom_multipleInserts_scrollbackOrderIsOldestFirst() {
                 TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
-                writeToRow(buf, 0, "FIRST");
+                buf.setCursor(0, 0);
+                buf.writeText("FIRST");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "SECND");
+                buf.setCursor(0, 0);
+                buf.writeText("SECND");
                 buf.insertEmptyLineAtBottom();
 
                 assertEquals("FIRST", buf.scrollback.get(0).toString());
@@ -995,14 +994,17 @@ class TerminalBufferTest {
             @Test
             void clearScreen_withContent_allScreenRowsBecomeBlanks() {
                 TerminalBuffer buf = new TerminalBuffer(4, 3, 10);
-                writeToRow(buf, 0, "ABCD");
-                writeToRow(buf, 1, "EFGH");
-                writeToRow(buf, 2, "IJKL");
+                buf.setCursor(0, 0);
+                buf.writeText("ABCD");
+                buf.setCursor(0, 1);
+                buf.writeText("EFGH");
+                buf.setCursor(0, 2);
+                buf.writeText("IJKL");
 
                 buf.clearScreen();
 
                 for (int r = 0; r < buf.height; r++) {
-                    assertEquals("    ", rowContent(buf, r));
+                    assertEquals("    ", buf.getScreenLine(r));
                 }
             }
 
@@ -1020,7 +1022,8 @@ class TerminalBufferTest {
             @Test
             void clearScreen_withScrollback_scrollbackUntouched() {
                 TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
-                writeToRow(buf, 0, "HIST ");
+                buf.setCursor(0, 0);
+                buf.writeText("HIST ");
                 buf.insertEmptyLineAtBottom(); // populate scrollback
 
                 buf.clearScreen();
@@ -1036,22 +1039,26 @@ class TerminalBufferTest {
             @Test
             void clearScreenAndScrollback_withContent_allScreenRowsBecomeBlanks() {
                 TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
-                writeToRow(buf, 0, "ABCD");
-                writeToRow(buf, 1, "EFGH");
+                buf.setCursor(0, 0);
+                buf.writeText("ABCD");
+                buf.setCursor(0, 1);
+                buf.writeText("EFGH");
 
                 buf.clearScreenAndScrollback();
 
                 for (int r = 0; r < buf.height; r++) {
-                    assertEquals("    ", rowContent(buf, r));
+                    assertEquals("    ", buf.getScreenLine(r));
                 }
             }
 
             @Test
             void clearScreenAndScrollback_withScrollback_scrollbackBecomesEmpty() {
                 TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
-                writeToRow(buf, 0, "LINE1");
+                buf.setCursor(0, 0);
+                buf.writeText("LINE1");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "LINE2");
+                buf.setCursor(0, 0);
+                buf.writeText("LINE2");
                 buf.insertEmptyLineAtBottom();
 
                 buf.clearScreenAndScrollback();
@@ -1093,22 +1100,10 @@ class TerminalBufferTest {
             buf = new TerminalBuffer(5, 3, 3);
         }
 
-        // Helper: write a distinguishable character string at cursor row
-        private void writeToRow(TerminalBuffer buf, int row, String text) {
-            buf.setCursor(0, row);
-            for (int i = 0; i < text.length() && i < buf.width; i++) {
-                buf.screen[row].getCell(i).ch = text.codePointAt(i);
-            }
-        }
-
-        private String rowContent(TerminalBuffer buf, int row) {
-            return buf.screen[row].toString();
-        }
-
-
         private void scrollLines(int n) {
             for (int i = 0; i < n; i++) {
-                writeToRow(buf, 0, "L" + i + "   ");
+                buf.setCursor(0, 0);
+                buf.writeText("L" + i + "   ");
                 buf.insertEmptyLineAtBottom();
             }
         }
@@ -1123,19 +1118,22 @@ class TerminalBufferTest {
 
             @Test
             void getScreenChar_afterWrite_returnsWrittenCodePoint() {
-                writeToRow(buf, 1, "  X  ");
+                buf.setCursor(0, 1);
+                buf.writeText("  X  ");
                 assertEquals('X', buf.getScreenChar(2, 1));
             }
 
             @Test
             void getScreenChar_unwrittenCellAdjacentToWrite_remainsSpace() {
-                writeToRow(buf, 1, "  X  ");
+                buf.setCursor(0, 1);
+                buf.writeText("  X  ");
                 assertEquals(' ', buf.getScreenChar(3, 1));
             }
 
             @Test
             void getScreenChar_afterScroll_reflectsShiftedContent() {
-                writeToRow(buf, 0, "TOP  ");
+                buf.setCursor(0, 0);
+                buf.writeText("TOP  ");
                 buf.insertEmptyLineAtBottom();
                 // screen[0] is now what was screen[1] — blank
                 assertEquals(' ', buf.getScreenChar(0, 0));
@@ -1188,13 +1186,15 @@ class TerminalBufferTest {
 
             @Test
             void getScreenLine_afterPartialWrite_paddedWithSpaces() {
-                writeToRow(buf, 1, "Hi");
+                buf.setCursor(0, 1);
+                buf.writeText("Hi");
                 assertEquals("Hi   ", buf.getScreenLine(1));
             }
 
             @Test
             void getScreenLine_lastRow_returnsCorrectContent() {
-                writeToRow(buf, 2, "End  ");
+                buf.setCursor(0, 2);
+                buf.writeText("End  ");
                 assertEquals("End  ", buf.getScreenLine(2));
             }
         }
@@ -1209,9 +1209,12 @@ class TerminalBufferTest {
 
             @Test
             void getScreenContent_afterWrites_includesAllRowsInOrder() {
-                writeToRow(buf, 0, "AAA  ");
-                writeToRow(buf, 1, "BBB  ");
-                writeToRow(buf, 2, "CCC  ");
+                buf.setCursor(0, 0);
+                buf.writeText("AAA  ");
+                buf.setCursor(0, 1);
+                buf.writeText("BBB  ");
+                buf.setCursor(0, 2);
+                buf.writeText("CCC  ");
                 assertEquals("AAA  \nBBB  \nCCC  \n", buf.getScreenContent());
             }
 
@@ -1229,7 +1232,8 @@ class TerminalBufferTest {
 
             @Test
             void getScrollbackChar_singleScroll_row0IsScrolledLine() {
-                writeToRow(buf, 0, "HELLO");
+                buf.setCursor(0, 0);
+                buf.writeText("HELLO");
                 buf.insertEmptyLineAtBottom();
 
                 assertEquals('H', buf.getScrollbackChar(0, 0));
@@ -1251,10 +1255,12 @@ class TerminalBufferTest {
 
             @Test
             void getScrollbackChar_mutatingScreenAfterScroll_doesNotCorruptScrollback() {
-                writeToRow(buf, 0, "ORIG ");
+                buf.setCursor(0, 0);
+                buf.writeText("ORIG ");
                 buf.insertEmptyLineAtBottom();
                 // Overwrite screen row 0 (now the line that was screen[1])
-                writeToRow(buf, 0, "MUTD ");
+                buf.setCursor(0, 0);
+                buf.writeText("MUTD ");
 
                 assertEquals('O', buf.getScrollbackChar(0, 0));
             }
@@ -1294,7 +1300,8 @@ class TerminalBufferTest {
 
             @Test
             void getScrollbackLine_singleScroll_returnsScrolledContent() {
-                writeToRow(buf, 0, "ROW0 ");
+                buf.setCursor(0, 0);
+                buf.writeText("ROW0 ");
                 buf.insertEmptyLineAtBottom();
 
                 assertEquals("ROW0 ", buf.getScrollbackLine(0));
@@ -1302,9 +1309,11 @@ class TerminalBufferTest {
 
             @Test
             void getScrollbackLine_multipleScrolls_indexMatchesScrollOrder() {
-                writeToRow(buf, 0, "FIRST");
+                buf.setCursor(0, 0);
+                buf.writeText("FIRST");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "SECND");
+                buf.setCursor(0, 0);
+                buf.writeText("SECND");
                 buf.insertEmptyLineAtBottom();
 
                 assertEquals("FIRST", buf.getScrollbackLine(0));
@@ -1322,28 +1331,36 @@ class TerminalBufferTest {
 
             @Test
             void getFullContent_noScrollback_withScreenWrites_matchesExactOutput() {
-                writeToRow(buf, 0, "AAA  ");
-                writeToRow(buf, 1, "BBB  ");
-                writeToRow(buf, 2, "CCC  ");
+                buf.setCursor(0, 0);
+                buf.writeText("AAA  ");
+                buf.setCursor(0, 1);
+                buf.writeText("BBB  ");
+                buf.setCursor(0, 2);
+                buf.writeText("CCC  ");
                 assertEquals("AAA  \nBBB  \nCCC  \n", buf.getFullContent());
             }
 
             @Test
             void getFullContent_withScrollback_scrollbackFirstThenScreen() {
-                writeToRow(buf, 0, "SB   ");
+                buf.setCursor(0, 0);
+                buf.writeText("SB   ");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "SC   ");
+                buf.setCursor(0, 0);
+                buf.writeText("SC   ");
                 // scrollback: ["SB   "], screen: ["SC   ", "     ", "     "]
                 assertEquals("SB   \nSC   \n     \n     \n", buf.getFullContent());
             }
 
             @Test
             void getFullContent_multipleScrolls_oldestFirstNewestScreenLast() {
-                writeToRow(buf, 0, "OLD  ");
+                buf.setCursor(0, 0);
+                buf.writeText("OLD  ");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "MID  ");
+                buf.setCursor(0, 0);
+                buf.writeText("MID  ");
                 buf.insertEmptyLineAtBottom();
-                writeToRow(buf, 0, "SCR  ");
+                buf.setCursor(0, 0);
+                buf.writeText("SCR  ");
                 // scrollback: ["OLD  ", "MID  "], screen: ["SCR  ", "     ", "     "]
                 assertEquals("OLD  \nMID  \nSCR  \n     \n     \n", buf.getFullContent());
             }
