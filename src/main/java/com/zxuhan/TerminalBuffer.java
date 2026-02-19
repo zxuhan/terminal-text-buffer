@@ -102,6 +102,96 @@ public class TerminalBuffer {
         currentUnderline = false;
     }
 
+    // --- Editing operations ---
+
+    /**
+     * Overwrites cells starting at the cursor position, moving right.
+     * Stops before writing if the cursor is already at {@code width-1} and this is not the first character.
+     * Cursor row never changes; cursor col is clamped to {@code width-1}.
+     */
+    public void writeText(String text) {
+        if (text.isEmpty()) {
+            return;
+        }
+        int[] codePoints = text.codePoints().toArray();
+        for (int i = 0; i < codePoints.length; i++) {
+            screen[cursorRow].setCell(cursorCol,
+                    new Cell(codePoints[i], currentFg, currentBg, currentBold, currentItalic, currentUnderline));
+
+            if (cursorCol == width - 1) {
+                return;
+            }
+            cursorCol = Math.min(cursorCol + 1, width - 1);
+        }
+    }
+
+    /**
+     * Inserts characters at the cursor, shifting existing content rightward.
+     * Only as many characters are inserted as there are trailing blank cells to absorb the shift.
+     * Cursor advances by the number of inserted characters (clamped to last cell).
+     */
+    public void insertText(String text) {
+        if (text.isEmpty()) {
+            return;
+        }
+        int[] codePoints = text.codePoints().toArray();
+        int total = height * width;
+        int cursorFlat = cursorRow * width + cursorCol;
+
+        int availableSlots = 0;
+        for (int i = total - 1; i >= cursorFlat; i--) {
+            Cell cell = screen[i / width].getCell(i % width);
+            if (isBlank(cell)) {
+                availableSlots++;
+            } else {
+                break;
+            }
+        }
+
+        int insertCount = Math.min(codePoints.length, availableSlots);
+        if (insertCount == 0) return;
+
+        for (int i = total - 1 - insertCount; i >= cursorFlat; i--) {
+            Cell src = screen[i / width].getCell(i % width);
+            screen[(i + insertCount) / width].setCell((i + insertCount) % width, src);
+        }
+
+        for (int i = 0; i < insertCount; i++) {
+            int flat = cursorFlat + i;
+            screen[flat / width].setCell(flat % width,
+                    new Cell(codePoints[i], currentFg, currentBg, currentBold, currentItalic, currentUnderline));
+        }
+
+        int newFlat = Math.min(cursorFlat + insertCount, total - 1);
+        cursorRow = newFlat / width;
+        cursorCol = newFlat % width;
+    }
+
+    private boolean isBlank(Cell cell) {
+        return cell.ch == ' '
+                && cell.fg == Color.DEFAULT
+                && cell.bg == Color.DEFAULT
+                && !cell.bold
+                && !cell.italic
+                && !cell.underline;
+    }
+
+    /**
+     * Fills every cell in the cursor row.
+     * {@code ch == null} fills with blank cells; otherwise fills with the given code point
+     * and current pen attributes. Cursor does not move.
+     */
+    public void fillLine(Integer ch) {
+        for (int col = 0; col < width; col++) {
+            if (ch == null) {
+                screen[cursorRow].setCell(col, Cell.blank());
+            } else {
+                screen[cursorRow].setCell(col,
+                        new Cell(ch, currentFg, currentBg, currentBold, currentItalic, currentUnderline));
+            }
+        }
+    }
+
     // --- Screen-level operations ---
 
     /**
