@@ -592,7 +592,7 @@ class TerminalBufferTest {
 
             @Test
             void writeText_cursorAtRightEdge_writesFirstCharOnly() {
-                buf.setCursor(4, 0);  // width-1 = 4
+                buf.setCursor(4, 0);
                 buf.writeText("AB");
                 assertAll(
                         () -> assertEquals('A', buf.getScreenChar(4, 0)),
@@ -608,7 +608,7 @@ class TerminalBufferTest {
                         () -> assertEquals('A', buf.getScreenChar(3, 0)),
                         () -> assertEquals('B', buf.getScreenChar(4, 0)),
                         () -> assertEquals(4, buf.getCursorCol()),
-                        () -> assertEquals(0, buf.getCursorRow())  // no wrap
+                        () -> assertEquals(0, buf.getCursorRow())
                 );
             }
 
@@ -678,31 +678,15 @@ class TerminalBufferTest {
 
             @Test
             void insertText_truncatesTextToAvailableSlots() {
-                // Fill cols 2-4 so only col 0-1 are blank → 1 blank at end when cursor at 0
-                // screen row 0: "  XYZ" → blanks at 0,1; non-blank at 2,3,4
-                buf.screen[0].getCell(2).ch = 'X';
-                buf.screen[0].getCell(3).ch = 'Y';
-                buf.screen[0].getCell(4).ch = 'Z';
-                // Trailing blanks from end: col4='Z' not blank → availableSlots=0? No.
-                // We need trailing blank cells, so use a different setup:
-                // row0: "AB   " → cols 2,3,4 are blank; cursor at 0
-                buf.screen[0].getCell(2).ch = ' '; buf.screen[0].getCell(3).ch = ' '; buf.screen[0].getCell(4).ch = ' ';
-                buf.screen[0].getCell(0).ch = 'A';
-                buf.screen[0].getCell(1).ch = 'B';
-                // Available slots = 3 trailing blanks (cols 2,3,4 on row 0 across all rows)
-                // Actually insertText considers the full flat buffer. With height=3, width=5:
-                // total=15. Trailing blanks = rows 1 and 2 (all blank) = 10 blanks + row0 cols2-4 = 3 → 13 trailing blanks
-                // cursor at col=2: cursorFlat=2, trailing from end = 13, insertCount=min(5,13)=5 → all text fits
-                // Let's simplify: fill ALL cells non-blank except last 2, then try inserting 3 chars
-                buf = new TerminalBuffer(5, 1, 10);  // height=1 for simplicity
+                // "XXX  " — only 2 trailing blanks, so 5-char input is truncated to 2
+                buf = new TerminalBuffer(5, 1, 10);
                 for (int c = 0; c < 3; c++) buf.screen[0].getCell(c).ch = 'X';
-                // screen: "XXX  " — trailing blanks = 2
                 buf.setCursor(0, 0);
-                buf.insertText("ABCDE");  // only 2 slots available → insertCount=2
+                buf.insertText("ABCDE");
                 assertAll(
                         () -> assertEquals('A', buf.getScreenChar(0, 0)),
                         () -> assertEquals('B', buf.getScreenChar(1, 0)),
-                        () -> assertEquals('X', buf.getScreenChar(2, 0))  // shifted
+                        () -> assertEquals('X', buf.getScreenChar(2, 0))
                 );
             }
 
@@ -730,8 +714,8 @@ class TerminalBufferTest {
                 buf = new TerminalBuffer(3, 2, 10);
                 // row 0: "X  ", row 1: "   " → flat: X at 0, blanks 1-5
                 buf.screen[0].getCell(0).ch = 'X';
-                buf.setCursor(1, 0);  // cursorFlat=1; trailing blanks from end: flat 5,4,3,2,1 all blank → 5
-                buf.insertText("ABCDE");  // insertCount=min(5,5)=5, cursor advances to flat 6 → clamped to 5 = (1,2)
+                buf.setCursor(1, 0);
+                buf.insertText("ABCDE");
                 assertAll(
                         () -> assertEquals('A', buf.getScreenChar(1, 0)),
                         () -> assertEquals('B', buf.getScreenChar(2, 0)),
@@ -793,14 +777,14 @@ class TerminalBufferTest {
                 // cols 2,3 blank (middle), col 4 = 'C' (non-blank at end)
                 buf.screen[0].getCell(4).ch = 'C';
                 buf.setCursor(2, 0);
-                buf.insertText("X");  // no trailing blanks → insertCount=0, no-op
+                buf.insertText("X");
                 assertAll(
                         () -> assertEquals('A', buf.getScreenChar(0, 0)),
                         () -> assertEquals('B', buf.getScreenChar(1, 0)),
                         () -> assertEquals(' ', buf.getScreenChar(2, 0)),
                         () -> assertEquals(' ', buf.getScreenChar(3, 0)),
                         () -> assertEquals('C', buf.getScreenChar(4, 0)),
-                        () -> assertEquals(2, buf.getCursorCol())  // cursor unchanged
+                        () -> assertEquals(2, buf.getCursorCol())
                 );
             }
         }
@@ -1318,6 +1302,204 @@ class TerminalBufferTest {
 
                 assertEquals("FIRST", buf.getScrollbackLine(0));
                 assertEquals("SECND", buf.getScrollbackLine(1));
+            }
+        }
+
+        @Nested
+        class OutOfBoundsAccessTest {
+
+            // --- getScreenChar ---
+
+            @Test
+            void getScreenChar_negativeCol_returnsSpace() {
+                assertEquals(' ', buf.getScreenChar(-1, 0));
+            }
+
+            @Test
+            void getScreenChar_colBeyondWidth_returnsSpace() {
+                assertEquals(' ', buf.getScreenChar(100, 0));
+            }
+
+            @Test
+            void getScreenChar_negativeRow_returnsSpace() {
+                assertEquals(' ', buf.getScreenChar(0, -1));
+            }
+
+            @Test
+            void getScreenChar_rowBeyondHeight_returnsSpace() {
+                assertEquals(' ', buf.getScreenChar(0, 100));
+            }
+
+            // --- getScreenAttributes ---
+
+            @Test
+            void getScreenAttributes_negativeCol_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScreenAttributes(-1, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScreenAttributes_colBeyondWidth_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScreenAttributes(100, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScreenAttributes_negativeRow_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScreenAttributes(0, -1);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScreenAttributes_rowBeyondHeight_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScreenAttributes(0, 100);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            // --- getScreenLine ---
+
+            @Test
+            void getScreenLine_negativeRow_returnsAllSpaces() {
+                assertEquals("     ", buf.getScreenLine(-1));
+            }
+
+            @Test
+            void getScreenLine_rowBeyondHeight_returnsAllSpaces() {
+                assertEquals("     ", buf.getScreenLine(100));
+            }
+
+            // --- getScrollbackChar ---
+
+            @Test
+            void getScrollbackChar_negativeCol_returnsSpace() {
+                buf.insertEmptyLineAtBottom();
+                assertEquals(' ', buf.getScrollbackChar(-1, 0));
+            }
+
+            @Test
+            void getScrollbackChar_colBeyondWidth_returnsSpace() {
+                buf.insertEmptyLineAtBottom();
+                assertEquals(' ', buf.getScrollbackChar(100, 0));
+            }
+
+            @Test
+            void getScrollbackChar_negativeRow_returnsSpace() {
+                assertEquals(' ', buf.getScrollbackChar(0, -1));
+            }
+
+            @Test
+            void getScrollbackChar_rowBeyondSize_returnsSpace() {
+                assertEquals(' ', buf.getScrollbackChar(0, 100));
+            }
+
+            @Test
+            void getScrollbackChar_emptyScrollback_returnsSpace() {
+                assertEquals(' ', buf.getScrollbackChar(0, 0));
+            }
+
+            // --- getScrollbackAttributes ---
+
+            @Test
+            void getScrollbackAttributes_negativeCol_returnsDefaultAttributes() {
+                buf.insertEmptyLineAtBottom();
+                CellAttributes attrs = buf.getScrollbackAttributes(-1, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScrollbackAttributes_colBeyondWidth_returnsDefaultAttributes() {
+                buf.insertEmptyLineAtBottom();
+                CellAttributes attrs = buf.getScrollbackAttributes(100, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScrollbackAttributes_negativeRow_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScrollbackAttributes(0, -1);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScrollbackAttributes_rowBeyondSize_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScrollbackAttributes(0, 100);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            @Test
+            void getScrollbackAttributes_emptyScrollback_returnsDefaultAttributes() {
+                CellAttributes attrs = buf.getScrollbackAttributes(0, 0);
+                assertAll(
+                        () -> assertEquals(Color.DEFAULT, attrs.fg()),
+                        () -> assertEquals(Color.DEFAULT, attrs.bg()),
+                        () -> assertFalse(attrs.bold()),
+                        () -> assertFalse(attrs.italic()),
+                        () -> assertFalse(attrs.underline())
+                );
+            }
+
+            // --- getScrollbackLine ---
+
+            @Test
+            void getScrollbackLine_negativeRow_returnsAllSpaces() {
+                assertEquals("     ", buf.getScrollbackLine(-1));
+            }
+
+            @Test
+            void getScrollbackLine_rowBeyondSize_returnsAllSpaces() {
+                assertEquals("     ", buf.getScrollbackLine(100));
+            }
+
+            @Test
+            void getScrollbackLine_emptyScrollback_returnsAllSpaces() {
+                assertEquals("     ", buf.getScrollbackLine(0));
             }
         }
 
