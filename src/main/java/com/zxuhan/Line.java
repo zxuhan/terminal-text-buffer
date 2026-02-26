@@ -42,7 +42,9 @@ public class Line {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < width; i++) {
-            sb.appendCodePoint(cells[i].ch);
+            if (cells[i].type != CellType.CONTINUATION) {
+                sb.appendCodePoint(cells[i].ch);
+            }
         }
         return sb.toString();
     }
