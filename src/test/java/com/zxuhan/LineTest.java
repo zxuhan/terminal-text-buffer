@@ -1,6 +1,7 @@
 package com.zxuhan;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -160,5 +161,55 @@ class LineTest {
         line.setCell(0, new Cell(emoji, Color.DEFAULT, Color.DEFAULT, false, false, false));
         String expected = new String(Character.toChars(emoji)) + "    ";
         assertEquals(expected, line.toString(), "code points above U+FFFF should render correctly via appendCodePoint");
+    }
+
+    // --- toString: wide char ---
+
+    @Nested
+    class ToStringWideCharTest {
+
+        @Test
+        void toString_wideCharPair_skipsContinuationCell() {
+            // width=4: WIDE at 0, CONT at 1, 'B' at 2, 'C' at 3 → 3-char string
+            Line l = new Line(4);
+            Cell wide = new Cell(0x4E2D, Color.DEFAULT, Color.DEFAULT, false, false, false); // 中
+            wide.type = CellType.WIDE;
+            l.cells[0] = wide;
+            l.cells[1] = Cell.continuation();
+            l.cells[2] = new Cell('B', Color.DEFAULT, Color.DEFAULT, false, false, false);
+            l.cells[3] = new Cell('C', Color.DEFAULT, Color.DEFAULT, false, false, false);
+            String result = l.toString();
+            assertEquals(3, result.length(), "CONTINUATION cell should be skipped");
+            assertEquals("中BC", result);
+        }
+
+        @Test
+        void toString_allWidePairs_evenWidth() {
+            // width=4: two WIDE+CONT pairs → 2-char string
+            Line l = new Line(4);
+            int cjk = 0x4E2D; // 中
+            for (int col = 0; col < 4; col += 2) {
+                Cell wide = new Cell(cjk, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                l.cells[col] = wide;
+                l.cells[col + 1] = Cell.continuation();
+            }
+            assertEquals(2, l.toString().length());
+        }
+
+        @Test
+        void toString_allWidePairs_oddWidth() {
+            // width=5: two WIDE+CONT pairs + trailing space → 3-char string
+            Line l = new Line(5);
+            int cjk = 0x4E2D;
+            for (int col = 0; col + 1 < 5; col += 2) {
+                Cell wide = new Cell(cjk, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                l.cells[col] = wide;
+                l.cells[col + 1] = Cell.continuation();
+            }
+            l.cells[4] = Cell.blank();
+            assertEquals(3, l.toString().length());
+        }
     }
 }

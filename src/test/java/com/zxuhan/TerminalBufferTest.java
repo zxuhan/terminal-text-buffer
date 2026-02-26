@@ -1557,4 +1557,387 @@ class TerminalBufferTest {
             }
         }
     }
+
+    @Nested
+    class WideCharTest {
+
+        @Nested
+        class CursorSnapTest {
+
+            @Test
+            void writeText_cursorOnContinuation_snapsLeftToWidePartner() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                // WIDE(中)@0, CONT@1 — cursor placed on the CONTINUATION
+                Cell wide = new Cell(0x4E2D, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                buf.screen[0].cells[0] = wide;
+                buf.screen[0].cells[1] = Cell.continuation();
+                buf.setCursor(1, 0);
+                buf.writeText("A");
+                // snapped to col 0 before write; 'A' overwrites WIDE and orphaned CONT is blanked
+                assertAll(
+                        () -> assertEquals('A', buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(1).type)
+                );
+            }
+
+            @Test
+            void insertText_cursorOnContinuation_snapsLeftToWidePartner() {
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                // WIDE(中)@0, CONT@1, blanks@2-5 — cursor on CONT
+                Cell wide = new Cell(0x4E2D, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                buf.screen[0].cells[0] = wide;
+                buf.screen[0].cells[1] = Cell.continuation();
+                buf.setCursor(1, 0);
+                buf.insertText("A");
+                // snapped to col 0; 'A' inserted there, wide pair shifts right
+                assertEquals('A', buf.screen[0].getCell(0).ch);
+                assertEquals(CellType.WIDE, buf.screen[0].getCell(1).type);
+            }
+
+            @Test
+            void writeText_continuationAtCol0_doesNotMoveToNegativeCol() {
+                // CONTINUATION at col 0 is a corrupted state; snap must clamp at 0, not go to -1
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.screen[0].cells[0] = Cell.continuation();
+                buf.setCursor(0, 0);
+                assertDoesNotThrow(() -> buf.writeText("A"));
+                assertEquals('A', buf.screen[0].getCell(0).ch);
+            }
+        }
+
+        @Nested
+        class WriteTextWideCharTest {
+
+            @Test
+            void writeText_wideChar_writesCellPairAndAdvancesCursorByTwo() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D"); // 中
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(0x4E2D, buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(2, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_wideChar_noRoomForPairAtLastColumn_nothingWritten() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setCursor(3, 0);
+                buf.writeText("\u4E2D");
+                assertAll(
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(3).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(3).ch),
+                        () -> assertEquals(3, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_wideChar_atSecondToLastColumn_writesPairCursorClampsToEnd() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setCursor(2, 0);
+                buf.writeText("\u4E2D");
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(3).type),
+                        () -> assertEquals(3, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_narrowOverWide_blanksOrphanedContinuation() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1
+                buf.setCursor(0, 0);
+                buf.writeText("A"); // narrow overwrites WIDE; CONT at col 1 must be cleared
+                assertAll(
+                        () -> assertEquals('A', buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(1).ch),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(1).type)
+                );
+            }
+
+            @Test
+            void writeText_wideChar_adjacentCellIsWide_blanksOrphanedContinuation() {
+                // Writing a wide char at col 0 when col 1 already holds a WIDE:
+                // the new CONTINUATION will overwrite col 1, leaving col 2 (old CONT) orphaned → must be blanked.
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                // Manually place: blank@0, WIDE(中)@1, CONT@2, blanks@3-5
+                Cell wide = new Cell(0x4E2D, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                buf.screen[0].cells[1] = wide;
+                buf.screen[0].cells[2] = Cell.continuation();
+                buf.setCursor(0, 0);
+                buf.writeText("\u5927"); // 大 — writes WIDE@0, CONT@1; col 1 was WIDE so col 2 gets blanked
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(2).ch)
+                );
+            }
+
+            @Test
+            void writeText_mixedNarrowAndWide_eachCharAdvancesByItsOwnWidth() {
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                buf.writeText("A\u4E2DB"); // narrow(1) + wide(2) + narrow(1) = cursor at 4
+                assertAll(
+                        () -> assertEquals('A', buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(2).type),
+                        () -> assertEquals('B', buf.screen[0].getCell(3).ch),
+                        () -> assertEquals(4, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_twoWideChars_fillEntireWidth4Line() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D\u5927"); // 中大 — two pairs exactly fill width=4
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(3).type),
+                        () -> assertEquals(3, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void writeText_wideChar_appliesCurrentPenAttributes() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setForeground(Color.RED);
+                buf.setBackground(Color.BLUE);
+                buf.setBold(true);
+                buf.writeText("\u4E2D");
+                Cell wide = buf.screen[0].getCell(0);
+                assertAll(
+                        () -> assertEquals(Color.RED,  wide.fg),
+                        () -> assertEquals(Color.BLUE, wide.bg),
+                        () -> assertTrue(wide.bold),
+                        () -> assertEquals(CellType.WIDE, wide.type)
+                );
+            }
+        }
+
+        @Nested
+        class InsertTextWideCharTest {
+
+            @Test
+            void insertText_wideChar_occupiesTwoSlotsAndAdvancesCursorByTwo() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.insertText("\u4E2D");
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(2, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void insertText_wideChar_onlyOneSlotAvailable_noOp() {
+                // cursor at col 3 of width=4 leaves exactly 1 trailing blank — not enough for a wide pair
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setCursor(3, 0);
+                buf.insertText("\u4E2D");
+                assertAll(
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(3).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(3).ch)
+                );
+            }
+
+            @Test
+            void insertText_mixedNarrowAndWide_writesInInputOrder() {
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                buf.insertText("A\u4E2D"); // 'A'(1 slot) + 中(2 slots) = 3 slots consumed
+                assertAll(
+                        () -> assertEquals('A', buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(3, buf.getCursorCol())
+                );
+            }
+
+            @Test
+            void insertText_wideChar_shiftsExistingContentRightByTwoSlots() {
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                buf.writeText("A");
+                buf.setCursor(0, 0);
+                buf.insertText("\u4E2D"); // 中 inserted at col 0; 'A' shifts to col 2
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals('A', buf.screen[0].getCell(2).ch),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(2).type)
+                );
+            }
+
+            @Test
+            void insertText_crossRowGuard_preventsWideSplitAtRowBoundary() {
+                // width=3, height=2: WIDE(中)@(0,0), CONT@(0,1), blanks everywhere else.
+                // Inserting "AB" (insertCount=2) would shift WIDE from flat 0 to flat 2 = (0, col 2 = width-1).
+                // Its CONTINUATION would land on (1,0) — a cross-row split. Guard must reduce insertCount to 1.
+                TerminalBuffer buf = new TerminalBuffer(3, 2, 10);
+                Cell wide = new Cell(0x4E2D, Color.DEFAULT, Color.DEFAULT, false, false, false);
+                wide.type = CellType.WIDE;
+                buf.screen[0].cells[0] = wide;
+                buf.screen[0].cells[1] = Cell.continuation();
+                // cursor at (0,0); only "A" can be inserted (guard shrinks budget from 2 to 1)
+                buf.insertText("AB");
+                assertAll(
+                        () -> assertEquals('A', buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.WIDE,  buf.screen[0].getCell(1).type), // shifted by 1, stays in row 0
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(2).type), // still in row 0
+                        () -> assertEquals(CellType.NORMAL, buf.screen[1].getCell(0).type)  // no split to row 1
+                );
+            }
+        }
+
+        @Nested
+        class FillLineWideCharTest {
+
+            @Test
+            void fillLine_wideChar_evenWidth_fillsPairs() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.fillLine(0x4E2D); // 中 — wide
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(0x4E2D, buf.screen[0].getCell(0).ch),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(0x4E2D, buf.screen[0].getCell(2).ch),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(3).type)
+                );
+            }
+
+            @Test
+            void fillLine_wideChar_oddWidth_lastColumnIsNormalSpace() {
+                // width=5: two complete pairs at cols 0-3; col 4 cannot form a pair so gets a normal space
+                TerminalBuffer buf = new TerminalBuffer(5, 1, 10);
+                buf.fillLine(0x4E2D);
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(0).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(1).type),
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(3).type),
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(4).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(4).ch)
+                );
+            }
+
+            @Test
+            void fillLine_wideChar_appliesCurrentPenAttributes() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setForeground(Color.RED);
+                buf.setBold(true);
+                buf.fillLine(0x4E2D);
+                Cell wide = buf.screen[0].getCell(0);
+                assertAll(
+                        () -> assertEquals(Color.RED, wide.fg),
+                        () -> assertTrue(wide.bold),
+                        () -> assertEquals(CellType.WIDE, wide.type)
+                );
+            }
+
+            @Test
+            void fillLine_wideChar_doesNotMoveCursor() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.setCursor(1, 1);
+                buf.fillLine(0x4E2D);
+                assertAll(
+                        () -> assertEquals(1, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+        }
+
+        @Nested
+        class ContentAccessWideCharTest {
+
+            @Test
+            void getScreenChar_wideCell_returnsCodePoint() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D");
+                assertEquals(0x4E2D, buf.getScreenChar(0, 0));
+            }
+
+            @Test
+            void getScreenChar_continuationCell_returnsWidePartnerCodePoint() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1
+                assertEquals(0x4E2D, buf.getScreenChar(1, 0));
+            }
+
+            @Test
+            void getScreenAttributes_continuationCell_returnsWidePartnerAttributes() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.setForeground(Color.GREEN);
+                buf.setBold(true);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1
+                CellAttributes attrs = buf.getScreenAttributes(1, 0); // query CONT col
+                assertAll(
+                        () -> assertEquals(Color.GREEN, attrs.fg()),
+                        () -> assertTrue(attrs.bold())
+                );
+            }
+
+            @Test
+            void getScrollbackChar_continuationCell_returnsWidePartnerCodePoint() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1
+                buf.insertEmptyLineAtBottom();
+                assertEquals(0x4E2D, buf.getScrollbackChar(1, 0));
+            }
+
+            @Test
+            void getScrollbackAttributes_continuationCell_returnsWidePartnerAttributes() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.setForeground(Color.BLUE);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1
+                buf.insertEmptyLineAtBottom();
+                CellAttributes attrs = buf.getScrollbackAttributes(1, 0); // query CONT col
+                assertEquals(Color.BLUE, attrs.fg());
+            }
+
+            @Test
+            void getScreenLine_wideChar_continuationCellNotInOutput() {
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1, blanks@2-3
+                String line = buf.getScreenLine(0);
+                // CONTINUATION skipped: "中" + 2 spaces = 3 chars, not 4
+                assertEquals("中  ", line);
+            }
+
+            @Test
+            void getScrollbackLine_wideChar_continuationCellNotInOutput() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.writeText("\u4E2D"); // WIDE@0, CONT@1, blanks@2-3
+                buf.insertEmptyLineAtBottom();
+                assertEquals("中  ", buf.getScrollbackLine(0));
+            }
+
+            @Test
+            void getScreenContent_wideChars_outputLengthReflectsVisibleChars() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.writeText("\u4E2D\u5927"); // 中大 — fills row 0 (4 cols, 2 wide chars)
+                // Each wide char produces 1 output char; 2 trailing spaces in blank row 1
+                assertEquals("中大\n    \n", buf.getScreenContent());
+            }
+
+            @Test
+            void getFullContent_wideCharsInScrollbackAndScreen_correctOrder() {
+                TerminalBuffer buf = new TerminalBuffer(4, 2, 10);
+                buf.writeText("\u4E2D\u5927"); // 中大 fills row 0; cursor ends at col 3
+                buf.insertEmptyLineAtBottom(); // 中大 → scrollback[0]; cursor stays at (0,3)
+                buf.setCursor(0, 0);
+                buf.writeText("\u5927\u4E2D"); // 大中 fills new row 0
+                buf.insertEmptyLineAtBottom(); // 大中 → scrollback[1]
+                assertEquals("中大\n大中\n    \n    \n", buf.getFullContent());
+            }
+        }
+    }
 }

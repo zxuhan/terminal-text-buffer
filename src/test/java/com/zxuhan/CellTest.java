@@ -1,6 +1,7 @@
 package com.zxuhan;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,7 +25,8 @@ class CellTest {
                 () -> assertEquals(Color.DEFAULT, cell.bg,  "background should be DEFAULT"),
                 () -> assertFalse(cell.bold,                "bold should be false"),
                 () -> assertFalse(cell.italic,              "italic should be false"),
-                () -> assertFalse(cell.underline,           "underline should be false")
+                () -> assertFalse(cell.underline,           "underline should be false"),
+                () -> assertEquals(CellType.NORMAL, cell.type, "type should be NORMAL")
         );
     }
 
@@ -45,7 +47,8 @@ class CellTest {
                 () -> assertEquals(fullySpecified.bg,        copy.bg,        "background should match"),
                 () -> assertEquals(fullySpecified.bold,      copy.bold,      "bold should match"),
                 () -> assertEquals(fullySpecified.italic,    copy.italic,    "italic should match"),
-                () -> assertEquals(fullySpecified.underline, copy.underline, "underline should match")
+                () -> assertEquals(fullySpecified.underline, copy.underline, "underline should match"),
+                () -> assertEquals(fullySpecified.type,      copy.type,      "type should match")
         );
     }
 
@@ -115,5 +118,48 @@ class CellTest {
                 () -> assertNotEquals(Color.DEFAULT, Color.BLACK,            "DEFAULT is not BLACK"),
                 () -> assertNotEquals(Color.DEFAULT, Color.WHITE,            "DEFAULT is not WHITE")
         );
+    }
+
+    // --- CellType ---
+
+    @Nested
+    class CellTypeTest {
+
+        @Test
+        void blank_hasNormalType() {
+            assertEquals(CellType.NORMAL, Cell.blank().type);
+        }
+
+        @Test
+        void continuation_hasBlankContentAndContinuationType() {
+            Cell cont = Cell.continuation();
+            assertAll(
+                    () -> assertEquals(' ', cont.ch),
+                    () -> assertEquals(Color.DEFAULT, cont.fg),
+                    () -> assertEquals(Color.DEFAULT, cont.bg),
+                    () -> assertFalse(cont.bold),
+                    () -> assertFalse(cont.italic),
+                    () -> assertFalse(cont.underline),
+                    () -> assertEquals(CellType.CONTINUATION, cont.type)
+            );
+        }
+
+        @Test
+        void copy_preservesWideType() {
+            Cell wide = new Cell('A', Color.DEFAULT, Color.DEFAULT, false, false, false);
+            wide.type = CellType.WIDE;
+            assertEquals(CellType.WIDE, wide.copy().type);
+        }
+
+        @Test
+        void copy_preservesContinuationType() {
+            assertEquals(CellType.CONTINUATION, Cell.continuation().copy().type);
+        }
+
+        @Test
+        void constructor_defaultsToNormalType() {
+            Cell cell = new Cell('X', Color.RED, Color.BLUE, true, false, true);
+            assertEquals(CellType.NORMAL, cell.type);
+        }
     }
 }
