@@ -5,12 +5,17 @@ A terminal text buffer — the core data structure that terminal emulators use t
 ## Structure
 
 ```
-src/main/java/com/zxuhan/
-├── Cell.java              # Single mutable grid cell (code point + colors + style flags)
-├── Line.java              # Row of cells with deep-copy support
-├── Color.java             # 17-value enum: DEFAULT + 16 standard terminal colors
-├── CellAttributes.java    # Immutable record for returning cell style metadata
-└── TerminalBuffer.java    # Main buffer: screen, scrollback, cursor, editing operations
+src/
+├── main/java/com/zxuhan/
+│   ├── Cell.java              # Single mutable grid cell (code point + colors + style flags)
+│   ├── Line.java              # Row of cells with deep-copy support
+│   ├── Color.java             # 17-value enum: DEFAULT + 16 standard terminal colors
+│   ├── CellAttributes.java    # Immutable record for returning cell style metadata
+│   └── TerminalBuffer.java    # Main buffer: screen, scrollback, cursor, editing operations
+└── test/java/com/zxuhan/
+    ├── CellTest.java          # Unit tests for Cell: blank(), copy(), constructor edge cases
+    ├── LineTest.java          # Unit tests for Line: getCell/setCell, copy(), toString()
+    └── TerminalBufferTest.java # Integration tests for cursor, attributes, editing, and content access
 ```
 
 The buffer has two logical parts:
