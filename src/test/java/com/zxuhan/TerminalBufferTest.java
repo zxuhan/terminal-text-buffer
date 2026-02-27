@@ -1558,6 +1558,8 @@ class TerminalBufferTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+
     @Nested
     class WideCharTest {
 
@@ -1937,6 +1939,240 @@ class TerminalBufferTest {
                 buf.writeText("\u5927\u4E2D"); // 大中 fills new row 0
                 buf.insertEmptyLineAtBottom(); // 大中 → scrollback[1]
                 assertEquals("中大\n大中\n    \n    \n", buf.getFullContent());
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ResizeTest {
+
+        @Nested
+        class HeightIncreaseTest {
+
+            @Test
+            void resize_heightIncrease_addsBlankLinesAtBottom() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                buf.resize(5, 4);
+                assertEquals(4, buf.screen.length);
+                assertEquals("     ", buf.getScreenLine(2));
+                assertEquals("     ", buf.getScreenLine(3));
+            }
+
+            @Test
+            void resize_heightIncrease_preservesExistingContent() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                buf.writeText("Hello");
+                buf.resize(5, 4);
+                assertEquals("Hello", buf.getScreenLine(0));
+                assertEquals("     ", buf.getScreenLine(1));
+                assertEquals("     ", buf.getScreenLine(2));
+                assertEquals("     ", buf.getScreenLine(3));
+
+            }
+
+            @Test
+            void resize_heightIncrease_cursorUnchanged() {
+                TerminalBuffer buf = new TerminalBuffer(5, 2, 10);
+                buf.setCursor(2, 1);
+                buf.resize(5, 4);
+                assertAll(
+                        () -> assertEquals(2, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+        }
+
+        @Nested
+        class HeightDecreaseTest {
+
+            @Test
+            void resize_heightDecrease_pushesTopRowsToScrollback() {
+                TerminalBuffer buf = new TerminalBuffer(5, 4, 10);
+                buf.writeText("Row0");
+                buf.setCursor(0, 1);
+                buf.writeText("Row1");
+                buf.resize(5, 2);
+                assertAll(
+                        () -> assertEquals(2, buf.scrollback.size()),
+                        () -> assertEquals("Row0 ", buf.getScrollbackLine(0)),
+                        () -> assertEquals("Row1 ", buf.getScrollbackLine(1))
+                );
+            }
+
+            @Test
+            void resize_heightDecrease_evictsScrollbackWhenOverMax() {
+                // maxScrollback=2; shrinking by 3 adds 3 lines, evicting oldest
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 2);
+                buf.writeText("Row0");
+                buf.setCursor(0, 1);
+                buf.writeText("Row1");
+                buf.setCursor(0, 2);
+                buf.writeText("Row2");
+                buf.resize(5, 1);
+                assertAll(
+                        () -> assertEquals(2, buf.scrollback.size()),
+                        () -> assertEquals("Row0 ", buf.getScrollbackLine(0)),
+                        () -> assertEquals("Row1 ", buf.getScrollbackLine(1))
+                );
+            }
+
+            @Test
+            void resize_heightDecrease_cursorRowClampsToNewHeight() {
+                TerminalBuffer buf = new TerminalBuffer(5, 4, 10);
+                buf.setCursor(0, 3);
+                buf.resize(5, 2);
+                // cursor was at row 3, delta=2, new row = 3-2=1, within [0,1]
+                assertEquals(1, buf.getCursorRow());
+            }
+
+            @Test
+            void resize_heightDecrease_cursorOnPushedRowLandsAtZero() {
+                TerminalBuffer buf = new TerminalBuffer(5, 4, 10);
+                buf.setCursor(2, 0);
+                buf.resize(5, 2);
+                // cursor was at row 0, delta=2, new row = 0-2=-2, clamped to 0
+                assertEquals(0, buf.getCursorRow());
+            }
+        }
+
+        @Nested
+        class WidthIncreaseTest {
+
+            @Test
+            void resize_widthIncrease_paddedBlanksOnRight() {
+                TerminalBuffer buf = new TerminalBuffer(3, 2, 10);
+                buf.writeText("ABC");
+                buf.resize(5, 2);
+                assertEquals("ABC  ", buf.getScreenLine(0));
+            }
+
+            @Test
+            void resize_widthIncrease_scrollbackAlsoResized() {
+                TerminalBuffer buf = new TerminalBuffer(3, 2, 10);
+                buf.writeText("ABC");
+                buf.insertEmptyLineAtBottom();
+                buf.resize(5, 2);
+                assertAll(
+                        () -> assertEquals(1, buf.scrollback.size()),
+                        () -> assertEquals("ABC  ", buf.getScrollbackLine(0))
+                );
+            }
+
+            @Test
+            void resize_widthIncrease_cursorUnchanged() {
+                TerminalBuffer buf = new TerminalBuffer(3, 2, 10);
+                buf.setCursor(2, 1);
+                buf.resize(6, 2);
+                assertAll(
+                        () -> assertEquals(2, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
+            }
+        }
+
+        @Nested
+        class WidthDecreaseTest {
+
+            @Test
+            void resize_widthDecrease_truncatesContent() {
+                TerminalBuffer buf = new TerminalBuffer(6, 2, 10);
+                buf.writeText("ABCDEF");
+                buf.resize(3, 2);
+                assertEquals("ABC", buf.getScreenLine(0));
+            }
+
+            @Test
+            void resize_widthDecrease_scrollbackAlsoTruncated() {
+                TerminalBuffer buf = new TerminalBuffer(6, 2, 10);
+                buf.writeText("ABCDEF");
+                buf.insertEmptyLineAtBottom();
+                buf.resize(3, 2);
+                assertAll(
+                        () -> assertEquals(1, buf.scrollback.size()),
+                        () -> assertEquals("ABC", buf.getScrollbackLine(0))
+                );
+            }
+
+            @Test
+            void resize_widthDecrease_cursorColClamped() {
+                TerminalBuffer buf = new TerminalBuffer(6, 2, 10);
+                buf.setCursor(5, 0);
+                buf.resize(3, 2);
+                assertEquals(2, buf.getCursorCol());
+            }
+
+            @Test
+            void resize_widthDecrease_wideCharAtBoundaryBlanked() {
+                // width=4: write 中(WIDE@0,CONT@1) 大(WIDE@2,CONT@3); shrink to 3 → col 2 is WIDE, blank it
+                TerminalBuffer buf = new TerminalBuffer(4, 1, 10);
+                buf.writeText("\u4E2D\u5927"); // 中大
+                buf.resize(3, 1);
+                assertAll(
+                        () -> assertEquals(CellType.NORMAL, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(' ', buf.screen[0].getCell(2).ch)
+                );
+            }
+
+            @Test
+            void resize_widthDecrease_continuationAtBoundary_pairIntact() {
+                // width=6: WIDE@0,CONT@1,WIDE@2,CONT@3,blank@4,blank@5; shrink to 4
+                // → col 3 is CONTINUATION, col 2 is its WIDE partner — both within bounds, pair is valid
+                TerminalBuffer buf = new TerminalBuffer(6, 1, 10);
+                buf.writeText("\u4E2D\u5927"); // 中大
+                buf.resize(4, 1);
+                assertAll(
+                        () -> assertEquals(CellType.WIDE, buf.screen[0].getCell(2).type),
+                        () -> assertEquals(0x5927, buf.screen[0].getCell(2).ch),
+                        () -> assertEquals(CellType.CONTINUATION, buf.screen[0].getCell(3).type)
+                );
+            }
+        }
+
+        @Nested
+        class NoOpTest {
+
+            @Test
+            void resize_sameDimensions_noChange() {
+                TerminalBuffer buf = new TerminalBuffer(5, 3, 10);
+                buf.writeText("Hello");
+                buf.setCursor(3, 2);
+                Line[] screenBefore = buf.screen;
+                buf.resize(5, 3);
+                assertAll(
+                        () -> assertSame(screenBefore, buf.screen),
+                        () -> assertEquals("Hello", buf.getScreenLine(0)),
+                        () -> assertEquals(3, buf.getCursorCol()),
+                        () -> assertEquals(2, buf.getCursorRow())
+                );
+            }
+        }
+
+        @Nested
+        class CombinedTest {
+
+            @Test
+            void resize_heightAndWidthBothChange_correctResult() {
+                TerminalBuffer buf = new TerminalBuffer(6, 4, 10);
+                buf.writeText("ABCDEF");
+                buf.setCursor(0, 1);
+                buf.writeText("GHIJKL");
+                buf.setCursor(0, 2);
+                buf.writeText("MNOPQR");
+                buf.setCursor(5, 3);
+                // shrink: height 4→2 (rows 0,1 pushed to scrollback), width 6→4 (truncate to 4)
+                buf.resize(4, 2);
+                assertAll(
+                        () -> assertEquals(2, buf.scrollback.size()),
+                        () -> assertEquals("ABCD", buf.getScrollbackLine(0)),
+                        () -> assertEquals("GHIJ", buf.getScrollbackLine(1)),
+                        () -> assertEquals("MNOP", buf.getScreenLine(0)),
+                        () -> assertEquals("    ", buf.getScreenLine(1)),
+                        // cursor was at (5,3); delta=2 → row=1; col clamped from 5→3
+                        () -> assertEquals(3, buf.getCursorCol()),
+                        () -> assertEquals(1, buf.getCursorRow())
+                );
             }
         }
     }
