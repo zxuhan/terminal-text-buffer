@@ -342,6 +342,95 @@ public class TerminalBuffer {
         scrollback.clear();
     }
 
+    // --- Screen resizing ---
+
+    /**
+     * Resizes the buffer to {@code newWidth × newHeight}.
+     *
+     * Height decrease: top rows are pushed into scrollback (same eviction rule as
+     * {@link #insertEmptyLineAtBottom}); cursor row shifts up by the same delta.
+     *
+     * Height increase: blank lines are appended at the bottom; content and cursor are untouched.
+     *
+     * Width decrease: every screen and scrollback line is truncated; wide-char pairs split at the
+     * new right edge are blanked. Cursor col is clamped and snapped off any CONTINUATION cell.
+     *
+     * Width increase: every line is padded with blank cells on the right.
+     *
+     * No-op when dimensions are unchanged.
+     */
+    public void resize(int newWidth, int newHeight) {
+        if (newWidth == width && newHeight == height) {
+            return;
+        }
+
+        // Step 1: height decrease — push top rows into scrollback
+        if (newHeight < height) {
+            int delta = height - newHeight;
+            for (int i = 0; i < delta; i++) {
+                scrollback.add(screen[i].copy());
+                if (scrollback.size() > maxScrollback) {
+                    scrollback.remove(0);
+                }
+            }
+            Line[] newScreen = new Line[newHeight];
+            System.arraycopy(screen, delta, newScreen, 0, newHeight);
+            screen = newScreen;
+            height = newHeight;
+            cursorRow = Math.max(0, cursorRow - delta);
+        }
+
+        // Step 2: height increase — append blank lines at the bottom
+        if (newHeight > height) {
+            Line[] newScreen = new Line[newHeight];
+            System.arraycopy(screen, 0, newScreen, 0, height);
+            for (int i = height; i < newHeight; i++) {
+                newScreen[i] = new Line(width);
+            }
+            screen = newScreen;
+            height = newHeight;
+        }
+
+        // Step 3: width change — rebuild every line at the new width
+        if (newWidth != width) {
+            int copyLen = Math.min(width, newWidth);
+            for (int r = 0; r < height; r++) {
+                Line newLine = new Line(newWidth);
+                for (int c = 0; c < copyLen; c++) {
+                    newLine.cells[c] = screen[r].cells[c].copy();
+                }
+                if (newWidth < width) {
+                    fixWideBoundary(newLine, newWidth);
+                }
+                screen[r] = newLine;
+            }
+            for (int r = 0; r < scrollback.size(); r++) {
+                Line src = scrollback.get(r);
+                Line newLine = new Line(newWidth);
+                for (int c = 0; c < copyLen; c++) {
+                    newLine.cells[c] = src.cells[c].copy();
+                }
+                if (newWidth < width) {
+                    fixWideBoundary(newLine, newWidth);
+                }
+                scrollback.set(r, newLine);
+            }
+        }
+
+        // Step 4: commit new width
+        width = newWidth;
+
+        // Step 5: clamp cursor and snap off CONTINUATION
+        setCursor(cursorCol, cursorRow);
+        snapCursorOffContinuation();
+    }
+
+    private void fixWideBoundary(Line line, int newWidth) {
+        if (line.cells[newWidth - 1].type == CellType.WIDE) {
+            line.cells[newWidth - 1] = Cell.blank();
+        }
+    }
+
     // --- Content access: screen ---
 
     /** Returns the code point at {@code (col, row)}; row in [0, height-1]. Returns space if out of bounds.
